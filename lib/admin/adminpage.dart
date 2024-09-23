@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:lineup/admin/userdetailspage.dart';
 import 'package:lineup/admin/turfdetailspage.dart';
+import 'package:geocoding/geocoding.dart';
 
 class AdminPage extends StatefulWidget {
   @override
@@ -269,7 +270,18 @@ class _AdminPageState extends State<AdminPage> {
           turf['name'] ?? 'Unknown',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        subtitle: Text(turf['city'] ?? 'Unknown Location'),
+        subtitle: FutureBuilder<String>(
+          future: _getPlaceNameFromCoordinates(turf['location']),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Text('Loading location...');
+            } else if (snapshot.hasError) {
+              return Text('Error loading location');
+            } else {
+              return Text(snapshot.data ?? 'Unknown Location');
+            }
+          },
+        ),
         onTap: () {
           Navigator.push(
             context,
@@ -355,5 +367,21 @@ class _AdminPageState extends State<AdminPage> {
         onTap: _onItemTapped,
       ),
     );
+  }
+
+  Future<String> _getPlaceNameFromCoordinates(GeoPoint location) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        location.latitude,
+        location.longitude
+      );
+      if (placemarks.isNotEmpty) {
+        Placemark place = placemarks[0];
+        return '${place.locality}, ${place.administrativeArea}';
+      }
+    } catch (e) {
+      print('Error getting place name: $e');
+    }
+    return 'Unknown location';
   }
 }

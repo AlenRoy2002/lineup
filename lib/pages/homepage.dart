@@ -9,6 +9,9 @@ import 'package:lineup/pages/profileeditscreen.dart';
 
 import 'package:lineup/pages/turfdetailspage_user.dart';
 import 'package:lineup/turf_management/turfmanagementpage.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:carousel_slider/carousel_slider.dart';
 
 class Homepage extends StatefulWidget {
   const Homepage({super.key});
@@ -23,12 +26,22 @@ class _HomepageState extends State<Homepage> {
   int _selectedIndex = 0;
   late Stream<List<Map<String, dynamic>>> turfStream;
   bool isLoadingTurfs = true;
+  String _currentLocationName = 'Fetching location...';
+
+  // Add this list of image URLs for the slider
+  final List<String> imageSliderUrls = [
+    'images/0001.jpg',
+    'images/0002.jpg',
+    'images/0003.jpg',
+    'images/0004.jpg',
+  ];
 
   @override
   void initState() {
     super.initState();
     _fetchUserData();
     _initializeTurfStream();
+    _getCurrentLocation();
   }
 
   Future<void> _fetchUserData() async {
@@ -43,6 +56,21 @@ class _HomepageState extends State<Homepage> {
     } catch (e) {
       _showErrorDialog("Failed to load user data: $e");
     }
+  }
+   Future<String> _getPlaceNameFromCoordinates(GeoPoint location) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        location.latitude,
+        location.longitude
+      );
+      if (placemarks.isNotEmpty) {
+        Placemark place = placemarks[0];
+        return '${place.locality}, ${place.administrativeArea}';
+      }
+    } catch (e) {
+      print('Error getting place name: $e');
+    }
+    return 'Unknown location';
   }
 
   void _initializeTurfStream() {
@@ -83,6 +111,8 @@ class _HomepageState extends State<Homepage> {
     );
   }
 
+
+
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
@@ -92,7 +122,7 @@ class _HomepageState extends State<Homepage> {
   Widget _buildContent() {
     switch (_selectedIndex) {
       case 0:
-        return _buildTurfList(); // Display turfs in the home section
+        return _buildHomeContent(); // New method for home content
       case 1:
         return Center(child: Text('Search Content', style: TextStyle(fontSize: 24)));
       case 2:
@@ -104,139 +134,196 @@ class _HomepageState extends State<Homepage> {
     }
   }
 
+  Widget _buildHomeContent() {
+    return Column(
+      children: [
+        _buildImageSlider(),
+        Expanded(child: _buildTurfList()),
+      ],
+    );
+  }
+
+  Widget _buildImageSlider() {
+    return CarouselSlider(
+      options: CarouselOptions(
+        height: 200.0,
+        enlargeCenterPage: true,
+        autoPlay: true,
+        aspectRatio: 16 / 9,
+        autoPlayCurve: Curves.fastOutSlowIn,
+        enableInfiniteScroll: true,
+        autoPlayAnimationDuration: Duration(milliseconds: 800),
+        viewportFraction: 0.8,
+      ),
+      items: imageSliderUrls.map((url) {
+        return Builder(
+          builder: (BuildContext context) {
+            return Container(
+              width: MediaQuery.of(context).size.width,
+              margin: EdgeInsets.symmetric(horizontal: 5.0),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8.0),
+                image: DecorationImage(
+                  image: AssetImage(url),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            );
+          },
+        );
+      }).toList(),
+    );
+  }
+  
+
   Widget _buildProfileContent() {
     return userData.isEmpty
         ? Center(child: CircularProgressIndicator())
-        : Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  SizedBox(height: 20),
-                  CircleAvatar(
-                    radius: 60,
-                    backgroundColor: Colors.grey.shade300,
-                    backgroundImage: userData['profile_image_url'] != null
-                        ? NetworkImage(userData['profile_image_url'])
-                        : null,
-                    child: userData['profile_image_url'] == null
-                        ? Icon(Icons.person, size: 60, color: Colors.white)
-                        : null,
-                  ),
-                  SizedBox(height: 20),
-                  Text(
-                    userData['name'] ?? 'User',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    "Email: ${userData['email'] ?? user.email!}",
-                    style: TextStyle(fontSize: 16),
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    "Role: ${userData['role'] ?? 'N/A'}",
-                    style: TextStyle(fontSize: 16),
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    "Country: ${userData['country'] ?? 'N/A'}",
-                    style: TextStyle(fontSize: 16),
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    "State: ${userData['state'] ?? 'N/A'}",
-                    style: TextStyle(fontSize: 16),
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    "City: ${userData['city'] ?? 'N/A'}",
-                    style: TextStyle(fontSize: 16),
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    "Local Place: ${userData['local_place'] ?? 'N/A'}",
-                    style: TextStyle(fontSize: 16),
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    "Phone Number: ${userData['phone_number'] ?? 'N/A'}",
-                    style: TextStyle(fontSize: 16),
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: 20),
-                  if (userData['role'] == 'Admin')
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => AdminPage()),
-                        );
-                      },
-                      child: Text('Admin Panel'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                      ),
-                    ),
-                  if (userData['role'] == 'Turf Owner')
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => TurfHomePage(userId: user.uid)),
-                        );
-                      },
-                      child: Text('Manage Turf'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                      ),
-                    ),
-                  SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ProfileEditScreen(
-                            userData: userData,
-                            onProfileUpdated: _fetchUserData,
+        : SingleChildScrollView(
+            child: Column(
+              children: [
+                Container(
+                  height: 200,
+                  child: SafeArea(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircleAvatar(
+                            radius: 60,
+                            backgroundColor: Colors.white,
+                            backgroundImage: userData['profile_image_url'] != null
+                                ? NetworkImage(userData['profile_image_url'])
+                                : null,
+                            child: userData['profile_image_url'] == null
+                                ? Icon(Icons.person, size: 60, color: Colors.green)
+                                : null,
                           ),
-                        ),
-                      );
-                    },
-                    child: Text('Edit Profile'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                          SizedBox(height: 10),
+                          Text(
+                            userData['name'] ?? 'User',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                             
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: signUserOut,
-                    child: Text('Sign Out'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildInfoRow(Icons.email, 'Email', userData['email'] ?? 'N/A'),
+                          _buildInfoRow(Icons.phone, 'Phone', userData['phone_number'] ?? 'N/A'),
+                          _buildInfoRow(Icons.person, 'Role', userData['role'] ?? 'N/A'),
+                          _buildInfoRow(Icons.location_on, 'Location', _currentLocationName),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
+                ),
+                SizedBox(height: 20),
+                if (userData['role'] == 'Admin')
+                  _buildActionButton('Admin Panel', () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => AdminPage()),
+                    );
+                  }, Colors.blue),
+                if (userData['role'] == 'Turf Owner')
+                  _buildActionButton('Manage Turf', () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => TurfHomePage(userId: user.uid)),
+                    );
+                  }, Colors.green),
+                SizedBox(height: 10),
+                _buildActionButton('Edit Profile', () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ProfileEditScreen(
+                        userData: userData,
+                        onProfileUpdated: _fetchUserData,
+                      ),
+                    ),
+                  );
+                }, Colors.green),
+                SizedBox(height: 10),
+                _buildActionButton('Sign Out', signUserOut, Colors.red),
+                SizedBox(height: 20),
+              ],
             ),
           );
   }
 
-  Widget _buildTurfListItem(Map<String, dynamic> turf) {
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.green, size: 24),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton(String label, VoidCallback onPressed, Color color) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        child: Text(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          padding: EdgeInsets.symmetric(vertical: 12),
+          textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      ),
+    );
+    
+  }
+
+  Widget _buildTurfListItem(Map<String, dynamic> turf, String locationName) {
+    
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -248,15 +335,15 @@ class _HomepageState extends State<Homepage> {
           backgroundImage: NetworkImage(turf['images'][0]), // Displaying the first image from the list
         ),
         title: Text(
-          turf['name'] ?? 'Unknown',
+         turf['name'] ?? 'Unknown',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        subtitle: Text(turf['city'] ?? 'Unknown Location'),
+        subtitle: Text(locationName),
         onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => TurfViewPage(turfData: turf),
+              builder: (context) => TurfViewPage(turfData: turf,userId: user.uid),
             ),
           );
         },
@@ -286,11 +373,39 @@ class _HomepageState extends State<Homepage> {
           itemCount: allTurfs.length,
           itemBuilder: (context, index) {
             final turf = allTurfs[index];
-            return _buildTurfListItem(turf);
+            return FutureBuilder<String>(
+              future: _getPlaceNameFromCoordinates(turf['location'] as GeoPoint),
+              builder: (context, snapshot) {
+                final locationName = snapshot.data ?? 'Loading...';
+                return _buildTurfListItem(turf, locationName);
+              },
+            );
           },
         );
       },
     );
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high);
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+          position.latitude, position.longitude);
+
+      if (placemarks.isNotEmpty) {
+        Placemark place = placemarks[0];
+        setState(() {
+          _currentLocationName =
+              '${place.name}, ${place.subLocality}, ${place.locality}, ${place.administrativeArea}';
+        });
+      }
+    } catch (e) {
+      print('Error getting location: $e');
+      setState(() {
+        _currentLocationName = 'Unable to fetch location';
+      });
+    }
   }
 
   @override

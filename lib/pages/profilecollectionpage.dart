@@ -1,10 +1,10 @@
 // ignore_for_file: use_super_parameters, library_private_types_in_public_api, prefer_const_constructors, sort_child_properties_last
 
-import 'package:csc_picker/csc_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:lineup/theme/theme_provider.dart';
@@ -22,117 +22,99 @@ class ProfileCollectionPage extends StatefulWidget {
 class _ProfileCollectionPageState extends State<ProfileCollectionPage> {
   final _nameController = TextEditingController();
   final _phoneNumberController = TextEditingController();
-  final _localPlaceController = TextEditingController();
-  String? _userRole;
-  String? _roleError;
   File? _profileImage;
   String? _profileImageUrl;
-
-  String? _countryValue;
-  String? _stateValue;
-  String? _cityValue;
-  String? _nameError;
-  String? _phoneError;
-  String? _locationError;
-
-  bool _isLoading = false; // Flag for loading state
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController.addListener(_validateName);
-    _phoneNumberController.addListener(_validatePhone);
-    _localPlaceController.addListener(_validateLocalPlace);
-  }
+  String? _selectedRole;
+  bool _isLoading = false;
 
   @override
   void dispose() {
-    _nameController.removeListener(_validateName);
-    _phoneNumberController.removeListener(_validatePhone);
-    _localPlaceController.removeListener(_validateLocalPlace);
     _nameController.dispose();
     _phoneNumberController.dispose();
-    _localPlaceController.dispose();
     super.dispose();
   }
 
-  void _validateName() {
-    setState(() {
-      if (_nameController.text.trim().isEmpty || !RegExp(r'^[a-zA-Z ]+$').hasMatch(_nameController.text.trim())) {
-        _nameError = "Please enter a valid name containing only alphabets.";
-      } else {
-        _nameError = null;
+  Future<GeoPoint?> _getCurrentLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _showDialog("Error", "Location services are disabled.");
+      return null;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        _showDialog("Error", "Location permissions are denied.");
+        return null;
       }
-    });
-  }
+    }
+    
+    if (permission == LocationPermission.deniedForever) {
+      _showDialog("Error", "Location permissions are permanently denied, we cannot request permissions.");
+      return null;
+    }
 
-  void _validatePhone() {
-    setState(() {
-      if (_phoneNumberController.text.trim().isEmpty || !RegExp(r'^[6-9]\d{9}$').hasMatch(_phoneNumberController.text.trim())) {
-        _phoneError = "Please enter a valid 10-digit Indian phone number.";
-      } else {
-        _phoneError = null;
-      }
-    });
-  }
-
-  void _validateLocalPlace() {
-    setState(() {
-      if (_localPlaceController.text.trim().isEmpty) {
-        _locationError = "Local place is required.";
-      } else {
-        _locationError = null;
-      }
-    });
-  }
-
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-
-    if (pickedFile != null) {
-      setState(() {
-        _profileImage = File(pickedFile.path);
-      });
-      await _uploadImage();
+    try {
+      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      return GeoPoint(position.latitude, position.longitude);
+    } catch (e) {
+      print('Error getting location: $e');
+      _showDialog("Error", "Failed to get current location: $e");
+      return null;
     }
   }
 
-  Future<void> saveUserProfile() async {
-    _validateName();
-    _validatePhone();
-    _validateLocalPlace();
+  bool _validatePhoneNumber(String phoneNumber) {
+    // Indian phone number regex pattern
+    final RegExp phoneRegex = RegExp(r'^(\+91[\-\s]?)?[0]?(91)?[789]\d{9}$');
+    return phoneRegex.hasMatch(phoneNumber);
+  }
 
-    if (_nameError != null || _phoneError != null || _locationError != null ||
-        _userRole == null || _countryValue == null || _stateValue == null || _cityValue == null) {
+  Future<void> saveUserProfile() async {
+    if (_nameController.text.trim().isEmpty || _selectedRole == null) {
       _showDialog("Error", "Please fill all fields correctly.");
       return;
     }
 
+    if (!_validatePhoneNumber(_phoneNumberController.text.trim())) {
+      _showDialog("Error", "Please enter a valid Indian phone number.");
+      return;
+    }
+
     setState(() {
-      _isLoading = true; // Start loading
+      _isLoading = true;
     });
 
     try {
+      GeoPoint? currentLocation = await _getCurrentLocation();
+      if (currentLocation == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
       User? user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        await _uploadImage();
+        if (_profileImage != null) {
+          await _uploadImage();
+        }
 
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
           'name': _nameController.text.trim(),
           'email': widget.email,
           'phone_number': _phoneNumberController.text.trim(),
-          'role': _userRole,
-          'country': _countryValue,
-          'state': _stateValue,
-          'city': _cityValue,
-          'local_place': _localPlaceController.text.trim(),
+          'role': _selectedRole,
+          'location': currentLocation,
           'profile_image_url': _profileImageUrl,
           'profileComplete': true,
           'status': 'enabled',
         });
 
-        // Navigate to the Homepage and remove all previous routes
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => Homepage()),
@@ -140,29 +122,11 @@ class _ProfileCollectionPageState extends State<ProfileCollectionPage> {
         );
       }
     } catch (e) {
-      _showDialog("Error", e.toString());
+      _showDialog("Error", "Failed to save profile: $e");
     } finally {
       setState(() {
-        _isLoading = false; // Stop loading
+        _isLoading = false;
       });
-    }
-  }
-
-  Future<void> _uploadImage() async {
-    try {
-      if (_profileImage != null) {
-        String fileName = DateTime.now().millisecondsSinceEpoch.toString();
-        Reference reference = FirebaseStorage.instance.ref().child('profile_photos/$fileName');
-        UploadTask uploadTask = reference.putFile(_profileImage!);
-
-        await uploadTask.whenComplete(() async {
-          _profileImageUrl = await reference.getDownloadURL();
-          print('Profile Image URL: $_profileImageUrl');
-        });
-      }
-    } catch (e) {
-      _showDialog("Error", "Failed to upload image: $e");
-      rethrow;
     }
   }
 
@@ -213,7 +177,6 @@ class _ProfileCollectionPageState extends State<ProfileCollectionPage> {
                   decoration: InputDecoration(
                     prefixIcon: Icon(Icons.person, color: Theme.of(context).primaryColor),
                     hintText: 'Name',
-                    errorText: _nameError,
                   ).applyDefaults(Theme.of(context).inputDecorationTheme),
                 ),
                 SizedBox(height: 20),
@@ -221,112 +184,35 @@ class _ProfileCollectionPageState extends State<ProfileCollectionPage> {
                   controller: _phoneNumberController,
                   decoration: InputDecoration(
                     prefixIcon: Icon(Icons.phone, color: Theme.of(context).primaryColor),
-                    hintText: 'Phone Number',
-                    errorText: _phoneError,
+                    hintText: 'Phone Number (Indian)',
                   ).applyDefaults(Theme.of(context).inputDecorationTheme),
+                  keyboardType: TextInputType.phone,
                 ),
                 SizedBox(height: 20),
-                TextField(
-                  controller: TextEditingController(text: widget.email),
-                  readOnly: true,
-                  decoration: InputDecoration(
-                    prefixIcon: Icon(Icons.email, color: Theme.of(context).primaryColor),
-                    hintText: 'Email',
-                  ).applyDefaults(Theme.of(context).inputDecorationTheme),
-                ),
-                SizedBox(height: 20),
-                DropdownButtonFormField<String>(
-                  value: _userRole,
-                  decoration: InputDecoration(
-                    prefixIcon: Icon(Icons.group, color: Theme.of(context).primaryColor),
-                    hintText: 'Select Role',
-                    errorText: _roleError,
-                  ).applyDefaults(Theme.of(context).inputDecorationTheme),
-                  items: [
-                    DropdownMenuItem(
-                      value: 'Player',
-                      child: Text('Player'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'Turf Owner',
-                      child: Text('Turf Owner'),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      _userRole = value;
-                    });
-                  },
-                ),
-                SizedBox(height: 20),
-                CSCPicker(
-                  showStates: true,
-                  showCities: true,
-                  flagState: CountryFlag.DISABLE,
-                  dropdownDecoration: BoxDecoration(
-                    borderRadius: BorderRadius.all(Radius.circular(10)),
-                    border: Border.all(color: Colors.grey.shade300, width: 1),
-                    color: isDarkMode ? Colors.grey[800] : Colors.white,
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Theme.of(context).primaryColor),
                   ),
-                  disabledDropdownDecoration: BoxDecoration(
-                    borderRadius: BorderRadius.all(Radius.circular(10)),
-                    border: Border.all(color: Colors.grey.shade300, width: 1),
-                    color: Colors.grey.shade300,
-                  ),
-                  selectedItemStyle: TextStyle(
-                    color: isDarkMode ? Colors.white : Colors.black,
-                    fontSize: 14,
-                  ),
-                  dropdownHeadingStyle: TextStyle(
-                    color: isDarkMode ? Colors.white : Colors.black,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  dropdownItemStyle: TextStyle(
-                    color: isDarkMode ? Colors.white : Colors.black,
-                    fontSize: 14,
-                  ),
-                  dropdownDialogRadius: 10.0,
-                  searchBarRadius: 10.0,
-                  countrySearchPlaceholder: "Country",
-                  stateSearchPlaceholder: "State",
-                  citySearchPlaceholder: "City",
-                  countryDropdownLabel: "*Country",
-                  stateDropdownLabel: "*State",
-                  cityDropdownLabel: "*City",
-                  countryFilter: [CscCountry.India],
-                  onCountryChanged: (value) {
-                    setState(() {
-                      _countryValue = value;
-                    });
-                  },
-                  onStateChanged: (value) {
-                    setState(() {
-                      _stateValue = value;
-                    });
-                  },
-                  onCityChanged: (value) {
-                    setState(() {
-                      _cityValue = value;
-                    });
-                  },
-                ),
-                if (_countryValue == null || _stateValue == null || _cityValue == null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(
-                      "Please select your country, state, and city.",
-                      style: TextStyle(color: Colors.red, fontSize: 12),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: _selectedRole,
+                      hint: Text('Select Your Role'),
+                      items: <String>['Player', 'Turf Owner'].map((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _selectedRole = newValue;
+                        });
+                      },
                     ),
                   ),
-                SizedBox(height: 20),
-                TextField(
-                  controller: _localPlaceController,
-                  decoration: InputDecoration(
-                    prefixIcon: Icon(Icons.location_city, color: Theme.of(context).primaryColor),
-                    hintText: 'Local Place',
-                    errorText: _locationError,
-                  ).applyDefaults(Theme.of(context).inputDecorationTheme),
                 ),
                 SizedBox(height: 40),
                 ElevatedButton(
@@ -356,5 +242,34 @@ class _ProfileCollectionPageState extends State<ProfileCollectionPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      setState(() {
+        _profileImage = File(pickedFile.path);
+      });
+      await _uploadImage();
+    }
+  }
+
+  Future<void> _uploadImage() async {
+    try {
+      if (_profileImage != null) {
+        String fileName = DateTime.now().millisecondsSinceEpoch.toString();
+        Reference reference = FirebaseStorage.instance.ref().child('profile_photos/$fileName');
+        UploadTask uploadTask = reference.putFile(_profileImage!);
+
+        await uploadTask.whenComplete(() async {
+          _profileImageUrl = await reference.getDownloadURL();
+          print('Profile Image URL: $_profileImageUrl');
+        });
+      }
+    } catch (e) {
+      _showDialog("Error", "Failed to upload image: $e");
+    }
   }
 }

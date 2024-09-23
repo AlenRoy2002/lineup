@@ -1,7 +1,6 @@
-// ignore_for_file: use_build_context_synchronously, prefer_const_constructors, library_private_types_in_public_api, use_super_parameters
-
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geocoding/geocoding.dart';
 
 class UserDetailsPage extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -14,21 +13,116 @@ class UserDetailsPage extends StatefulWidget {
 
 class _UserDetailsPageState extends State<UserDetailsPage> {
   late String userStatus;
+  String locationName = 'Loading...';
+  String? turfName;
 
   @override
   void initState() {
     super.initState();
-    userStatus = widget.userData['status'] ?? 'enabled'; // Default to 'enabled' if status is null
+    userStatus = widget.userData['status'] ?? 'enabled';
+    _getLocationName();
+    if (widget.userData['role'] == 'Turf Owner') {
+      _fetchTurfName();
+    }
+  }
+
+  Future<void> _getLocationName() async {
+    try {
+      GeoPoint location = widget.userData['location'];
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        location.latitude,
+        location.longitude
+      );
+      if (placemarks.isNotEmpty) {
+        Placemark place = placemarks[0];
+        setState(() {
+          locationName = '${place.locality}, ${place.administrativeArea}';
+        });
+      }
+    } catch (e) {
+      print('Error getting location name: $e');
+      setState(() {
+        locationName = 'Unknown location';
+      });
+    }
+  }
+
+  Future<void> _fetchTurfName() async {
+    try {
+      QuerySnapshot turfSnapshot = await FirebaseFirestore.instance
+          .collection('turfs')
+          .where('users', isEqualTo: widget.userData['uid'])
+          .limit(1)
+          .get();
+
+      if (turfSnapshot.docs.isNotEmpty) {
+        setState(() {
+          turfName = turfSnapshot.docs.first['name'];
+        });
+      }
+    } catch (e) {
+      print('Error fetching turf name: $e');
+    }
   }
 
   Future<void> _toggleUserStatus() async {
-    String newStatus = userStatus == 'enabled' ? 'disabled' : 'enabled';
+    if (userStatus == 'enabled') {
+      _showDeactivationDialog();
+    } else {
+      await _updateUserStatus('enabled');
+    }
+  }
 
+  Future<void> _showDeactivationDialog() async {
+    String? reason;
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Deactivate User'),
+          content: TextField(
+            onChanged: (value) {
+              reason = value;
+            },
+            decoration: InputDecoration(hintText: "Enter reason for deactivation"),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Deactivate'),
+              onPressed: () async {
+                if (reason != null && reason!.isNotEmpty) {
+                  Navigator.of(context).pop();
+                  await _updateUserStatus('disabled', reason: reason);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Please enter a reason for deactivation')),
+                  );
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _updateUserStatus(String newStatus, {String? reason}) async {
     try {
+      Map<String, dynamic> updateData = {'status': newStatus};
+      if (reason != null) {
+        updateData['deactivation_reason'] = reason;
+      }
+
       await FirebaseFirestore.instance
           .collection('users')
-          .doc(widget.userData['uid']) // Assuming `uid` is the document ID
-          .update({'status': newStatus});
+          .doc(widget.userData['uid'])
+          .update(updateData);
 
       setState(() {
         userStatus = newStatus;
@@ -50,35 +144,31 @@ class _UserDetailsPageState extends State<UserDetailsPage> {
       appBar: AppBar(
         title: Text('User Details'),
         centerTitle: true,
+        backgroundColor: Colors.green,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
+      body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Profile Photo
+            SizedBox(height: 20),
             CircleAvatar(
-              radius: 60,
+              radius: 70,
               backgroundImage: NetworkImage(widget.userData['profile_image_url'] ?? 'https://via.placeholder.com/150'),
               backgroundColor: Colors.grey[200],
             ),
             SizedBox(height: 16),
-            // User Name
             Text(
               widget.userData['name'] ?? 'Unknown',
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 16),
-            // User Information
-            _buildUserInfo('Email', widget.userData['email']),
-            _buildUserInfo('Role', widget.userData['role']),
-            _buildUserInfo('City', widget.userData['city']),
-            _buildUserInfo('District', widget.userData['district']),
-            _buildUserInfo('State', widget.userData['state']),
-            _buildUserInfo('Phone Number', widget.userData['phone_number']),
-             _buildUserInfo('Status', widget.userData['status']),
-            SizedBox(height: 32),
-            // Activate/Deactivate Button
+            SizedBox(height: 20),
+            _buildInfoCard(Icons.email, 'Email', widget.userData['email']),
+            _buildInfoCard(Icons.phone, 'Phone', widget.userData['phone_number']),
+            _buildInfoCard(Icons.work, 'Role', widget.userData['role']),
+            if (widget.userData['role'] == 'Turf Owner' && turfName != null)
+              _buildInfoCard(Icons.sports_soccer, 'Turf Name', turfName!),
+            _buildInfoCard(Icons.location_on, 'Location', locationName),
+            SizedBox(height: 30),
             ElevatedButton(
               onPressed: _toggleUserStatus,
               style: ElevatedButton.styleFrom(
@@ -93,41 +183,22 @@ class _UserDetailsPageState extends State<UserDetailsPage> {
                 style: TextStyle(fontSize: 18),
               ),
             ),
+            SizedBox(height: 20),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildUserInfo(String label, String? value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Card(
-        elevation: 4.0,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Label
-              SizedBox(
-                width: 120,
-                child: Text(
-                  '$label:',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-              // Value
-              Expanded(
-                child: Text(
-                  value ?? 'N/A',
-                  style: TextStyle(fontSize: 18),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ),
+  Widget _buildInfoCard(IconData icon, String label, String? value) {
+    return Card(
+      margin: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: ListTile(
+        leading: Icon(icon, color: Colors.green, size: 30),
+        title: Text(label, style: TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(value ?? 'N/A', style: TextStyle(fontSize: 16)),
       ),
     );
   }
