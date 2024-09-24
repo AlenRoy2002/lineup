@@ -57,7 +57,9 @@ class _BookingDetailsPageState extends State<BookingDetailsPage> {
       msg: "Payment Successful: ${response.paymentId}",
       toastLength: Toast.LENGTH_LONG,
     );
-    _updateDatabase(response.paymentId!);
+    _updateDatabase(response.paymentId!).then((_) {
+      _showTicket(response.paymentId!);
+    });
   }
 
   void _handlePaymentError(PaymentFailureResponse response) {
@@ -148,6 +150,42 @@ class _BookingDetailsPageState extends State<BookingDetailsPage> {
       print('Error getting place name: $e');
     }
     return 'Unknown location';
+  }
+
+  void _showTicket(String paymentId) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Booking Confirmed'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text('Thank you for your booking!'),
+                SizedBox(height: 10),
+                Text('Turf: ${widget.turfData['name']}'),
+                Text('Date: ${DateFormat('MMMM d, yyyy').format(widget.selectedDate)}'),
+                Text('Sport: ${widget.selectedSport}'),
+                Text('Box: ${widget.selectedBox}'),
+                Text('Time Slots: ${widget.selectedTimeSlots.join(', ')}'),
+                Text('Total Amount: ₹${widget.totalAmount}'),
+                SizedBox(height: 10),
+                Text('Payment ID: $paymentId'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Back to Home'),
+              onPressed: () {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
