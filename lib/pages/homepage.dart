@@ -408,6 +408,35 @@ class _HomepageState extends State<Homepage> {
     }
   }
 
+  Widget _buildUserBookings() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('bookings')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Center(child: Text('No bookings found'));
+        }
+        return ListView.builder(
+          itemCount: snapshot.data!.docs.length,
+          itemBuilder: (context, index) {
+            var booking = snapshot.data!.docs[index].data() as Map<String, dynamic>;
+            return ListTile(
+              title: Text('Booking for ${booking['turfId']}'),
+              subtitle: Text('Date: ${booking['date'].toDate().toString().split(' ')[0]}'),
+              trailing: Text('Status: ${booking['status']}'),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
