@@ -864,6 +864,20 @@ class _TurfManagementPageState extends State<TurfManagementPage> {
       });
 
       try {
+        // Fetch user data
+        DocumentSnapshot userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.userId)
+            .get();
+        
+        if (!userDoc.exists) {
+          throw Exception('User data not found');
+        }
+
+        Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+        String ownerName = userData['name'] ?? 'Unknown';
+        String ownerPhone = userData['phone_number'] ?? 'Unknown';
+
         List<String> imageUrls = await _uploadImages();
         String licenseUrl = await _uploadLicense();
         await FirebaseFirestore.instance.collection('turfs').doc(widget.userId).set({
@@ -877,6 +891,8 @@ class _TurfManagementPageState extends State<TurfManagementPage> {
           'location': GeoPoint(_selectedLocation!.latitude, _selectedLocation!.longitude),
           'amenities': _selectedAmenities,
           'status': 'pending',
+          'owner_name': ownerName,  // Add owner name
+          'owner_phone': ownerPhone,  // Add owner phone
         });
         Navigator.pop(context);
       } catch (e) {

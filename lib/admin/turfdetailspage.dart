@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:url_launcher/url_launcher_string.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 
 class TurfDetailsPage extends StatefulWidget {
@@ -16,32 +16,10 @@ class TurfDetailsPage extends StatefulWidget {
 }
 
 class _TurfDetailsPageState extends State<TurfDetailsPage> {
-  Map<String, dynamic> ownerData = {};
-  String ownerName = 'Loading...';
-
   @override
   void initState() {
     super.initState();
-    _fetchOwnerData();
-  }
-
-  Future<void> _fetchOwnerData() async {
-    try {
-      String turfId = widget.turfData['id'];
-      DocumentSnapshot ownerDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(turfId)
-          .get();
-      
-      if (ownerDoc.exists) {
-        setState(() {
-          ownerData = ownerDoc.data() as Map<String, dynamic>;
-          ownerName = ownerData['name'] ?? 'Unknown';
-        });
-      }
-    } catch (e) {
-      print('Error fetching owner data: $e');
-    }
+    // Remove _fetchOwnerData() as it's no longer needed
   }
 
   Future<String> _getAddressFromLatLng(GeoPoint location) async {
@@ -105,7 +83,7 @@ class _TurfDetailsPageState extends State<TurfDetailsPage> {
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String value) {
+  Widget _buildInfoRow(IconData icon, String label, String value, {bool isPhoneNumber = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -121,9 +99,51 @@ class _TurfDetailsPageState extends State<TurfDetailsPage> {
               ],
             ),
           ),
+          if (isPhoneNumber)
+            Row(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.phone, color: Colors.green),
+                  onPressed: () => _makePhoneCall(value),
+                ),
+                IconButton(
+                  icon: Icon(Icons.message, color: Colors.green),
+                  onPressed: () => _openWhatsApp(value),
+                ),
+              ],
+            ),
         ],
       ),
     );
+  }
+
+  void _makePhoneCall(String phoneNumber) async {
+    final Uri launchUri = Uri(
+      scheme: 'tel',
+      path: phoneNumber,
+    );
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not launch phone call')),
+      );
+    }
+  }
+
+  void _openWhatsApp(String phoneNumber) async {
+    String cleanedNumber = phoneNumber.replaceAll(RegExp(r'\D'), '');
+    if (!cleanedNumber.startsWith('91')) {
+      cleanedNumber = '91$cleanedNumber';
+    }
+    var whatsappUrl = "https://wa.me/$cleanedNumber";
+    if (await canLaunchUrl(Uri.parse(whatsappUrl))) {
+      await launchUrl(Uri.parse(whatsappUrl));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open WhatsApp')),
+      );
+    }
   }
 
   Widget _buildInfoCard(String title, String value) {
@@ -238,12 +258,12 @@ class _TurfDetailsPageState extends State<TurfDetailsPage> {
       return;
     }
 
-    final url = 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
+    final Uri url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$latitude,$longitude');
     print('Attempting to launch URL: $url');
 
     try {
-      if (await canLaunchUrlString(url)) {
-        await launchUrlString(url);
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url);
       } else {
         print('Error: Could not launch $url');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -277,8 +297,13 @@ class _TurfDetailsPageState extends State<TurfDetailsPage> {
                   Text(widget.turfData['name'] ?? 'Unknown', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                   SizedBox(height: 20),
                   _buildSectionTitle('Owner Details'),
-                  _buildInfoRow(Icons.person, 'Owner Name', ownerName),
-                  _buildInfoRow(Icons.phone, 'Phone Number', ownerData['phone_number'] ?? 'Loading...'),
+                  _buildInfoRow(Icons.person, 'Owner Name', widget.turfData['owner_name'] ?? 'Unknown'),
+                  _buildInfoRow(
+                    Icons.phone, 
+                    'Phone Number', 
+                    widget.turfData['owner_phone'] ?? 'Unknown',
+                    isPhoneNumber: true
+                  ),
                   SizedBox(height: 20),
                   _buildSectionTitle('Location'),
                   FutureBuilder<String>(

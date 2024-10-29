@@ -49,8 +49,48 @@ class _SlotBookingPageState extends State<SlotBookingPage> {
     final slots = <String>[];
     var currentTime = startTime;
 
+    // Get current date and time
+    DateTime now = DateTime.now();
+    
+    // If selected date is today, start from next hour
+    DateTime minimumTime;
+    if (selectedDate.year == now.year && 
+        selectedDate.month == now.month && 
+        selectedDate.day == now.day) {
+      // Round up to the next hour and add 1 hour buffer
+      minimumTime = DateTime(
+        now.year, 
+        now.month, 
+        now.day, 
+        now.hour + 1, 
+        0
+      ).add(Duration(hours: 1));
+    } else {
+      // If future date, start from turf's opening time
+      minimumTime = DateTime(
+        selectedDate.year,
+        selectedDate.month,
+        selectedDate.day,
+        startTime.hour,
+        startTime.minute
+      );
+    }
+
+    // Create slots
     while (currentTime.isBefore(endTime)) {
-      slots.add(DateFormat('h:mm a').format(currentTime));
+      DateTime slotDateTime = DateTime(
+        selectedDate.year,
+        selectedDate.month,
+        selectedDate.day,
+        currentTime.hour,
+        currentTime.minute
+      );
+
+      // Only add future slots
+      if (slotDateTime.isAfter(minimumTime) || slotDateTime.isAtSameMomentAs(minimumTime)) {
+        slots.add(DateFormat('h:mm a').format(currentTime));
+      }
+      
       currentTime = currentTime.add(Duration(hours: 1));
     }
 
@@ -58,7 +98,9 @@ class _SlotBookingPageState extends State<SlotBookingPage> {
     await _getBookedTimeSlots();
 
     // Filter out booked slots
-    availableTimeSlots = slots.where((slot) => !bookedTimeSlots.contains(slot)).toList();
+    setState(() {
+      availableTimeSlots = slots.where((slot) => !bookedTimeSlots.contains(slot)).toList();
+    });
   }
 
   Future<void> _getBookedTimeSlots() async {
@@ -273,56 +315,75 @@ class _SlotBookingPageState extends State<SlotBookingPage> {
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           SizedBox(height: 10),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              childAspectRatio: 2,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-            ),
-            itemCount: availableTimeSlots.length,
-            itemBuilder: (context, index) {
-              final time = availableTimeSlots[index];
-              final isSelected = selectedTimeSlots.contains(time);
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    if (isSelected) {
-                      selectedTimeSlots.remove(time);
-                    } else {
-                      selectedTimeSlots.add(time);
-                    }
-                    _updateTotalAmount();
-                  });
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.green : Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
+          if (availableTimeSlots.isEmpty)
+            Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  selectedDate.year == DateTime.now().year &&
+                          selectedDate.month == DateTime.now().month &&
+                          selectedDate.day == DateTime.now().day
+                      ? 'No slots available for today. Please book at least 2 hours in advance.'
+                      : 'No slots available for this date.',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey[600],
                   ),
-                  child: Center(
-                    child: Text(
-                      time,
-                      style: TextStyle(
-                        color: isSelected ? Colors.white : Colors.black,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                childAspectRatio: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+              ),
+              itemCount: availableTimeSlots.length,
+              itemBuilder: (context, index) {
+                final time = availableTimeSlots[index];
+                final isSelected = selectedTimeSlots.contains(time);
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (isSelected) {
+                        selectedTimeSlots.remove(time);
+                      } else {
+                        selectedTimeSlots.add(time);
+                      }
+                      _updateTotalAmount();
+                    });
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.green : Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Text(
+                        time,
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
-          ),
+                );
+              },
+            ),
         ],
       ),
     );

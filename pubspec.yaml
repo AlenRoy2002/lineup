@@ -30,7 +30,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-    
+  # assets:
+  #   - assets/icons/
+   
 
 
   # The following adds the Cupertino Icons font to your application.
@@ -55,6 +57,9 @@ dependencies:
   carousel_slider: ^4.0.0
   razorpay_flutter: ^1.3.0
   fluttertoast: ^8.0.9
+  flutter_svg: ^1.0.0
+
+
 
 dev_dependencies:
   flutter_test:
