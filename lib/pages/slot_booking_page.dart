@@ -7,9 +7,16 @@ import 'package:lineup/pages/booking_details_page.dart';
 
 class SlotBookingPage extends StatefulWidget {
   final Map<String, dynamic> turfData;
-  final String userId; // Add userId to the constructor
+  final String turfId;
+  final String userId;
+  final Map<String, dynamic> userData;
 
-  SlotBookingPage({required this.turfData, required this.userId});
+  SlotBookingPage({
+    required this.turfData,
+    required this.turfId,
+    required this.userId,
+    required this.userData,
+  });
 
   @override
   _SlotBookingPageState createState() => _SlotBookingPageState();
@@ -88,7 +95,8 @@ class _SlotBookingPageState extends State<SlotBookingPage> {
 
       // Only add future slots
       if (slotDateTime.isAfter(minimumTime) || slotDateTime.isAtSameMomentAs(minimumTime)) {
-        slots.add(DateFormat('h:mm a').format(currentTime));
+        String timeSlot = DateFormat('h:mm a').format(currentTime);
+        slots.add(timeSlot);
       }
       
       currentTime = currentTime.add(Duration(hours: 1));
@@ -100,20 +108,43 @@ class _SlotBookingPageState extends State<SlotBookingPage> {
     // Filter out booked slots
     setState(() {
       availableTimeSlots = slots.where((slot) => !bookedTimeSlots.contains(slot)).toList();
+      print('Available slots: $availableTimeSlots');
     });
   }
 
   Future<void> _getBookedTimeSlots() async {
     try {
+      // Create start and end of the selected date
+      DateTime startOfDay = DateTime(
+        selectedDate.year,
+        selectedDate.month,
+        selectedDate.day,
+        0, 0, 0
+      );
+      
+      DateTime endOfDay = DateTime(
+        selectedDate.year,
+        selectedDate.month,
+        selectedDate.day,
+        23, 59, 59
+      );
+
       final snapshot = await FirebaseFirestore.instance
           .collection('bookings')
-          .where('turfId', isEqualTo: widget.turfData['id'])
-          .where('date', isEqualTo: selectedDate)
+          .where('turfId', isEqualTo: widget.turfId)
+          .where('date', isGreaterThanOrEqualTo: startOfDay)
+          .where('date', isLessThanOrEqualTo: endOfDay)
           .get();
 
-      bookedTimeSlots = snapshot.docs
-          .expand((doc) => List<String>.from(doc['timeSlots']))
-          .toList();
+      setState(() {
+        bookedTimeSlots = [];
+        for (var doc in snapshot.docs) {
+          List<String> slots = List<String>.from(doc['timeSlots']);
+          bookedTimeSlots.addAll(slots);
+        }
+      });
+
+      print('Booked slots for ${DateFormat('yyyy-MM-dd').format(selectedDate)}: $bookedTimeSlots');
     } catch (e) {
       print('Error fetching booked time slots: $e');
     }
@@ -408,12 +439,14 @@ class _SlotBookingPageState extends State<SlotBookingPage> {
             MaterialPageRoute(
               builder: (context) => BookingDetailsPage(
                 turfData: widget.turfData,
+                turfId: widget.turfId,
                 selectedDate: selectedDate,
                 selectedSport: selectedSport!,
                 selectedBox: selectedBox!,
                 selectedTimeSlots: selectedTimeSlots,
                 totalAmount: totalAmount,
-                userId: widget.userId, // Pass userId to BookingDetailsPage
+                userId: widget.userId,
+                userData: widget.userData,
               ),
             ),
           );

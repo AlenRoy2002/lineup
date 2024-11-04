@@ -7,21 +7,25 @@ import 'package:fluttertoast/fluttertoast.dart';
 
 class BookingDetailsPage extends StatefulWidget {
   final Map<String, dynamic> turfData;
+  final String turfId;
   final DateTime selectedDate;
   final String selectedSport;
   final String selectedBox;
   final List<String> selectedTimeSlots;
   final double totalAmount;
-  final String userId; // Add userId to the constructor
+  final String userId;
+  final Map<String, dynamic> userData;
 
   BookingDetailsPage({
     required this.turfData,
+    required this.turfId,
     required this.selectedDate,
     required this.selectedSport,
     required this.selectedBox,
     required this.selectedTimeSlots,
     required this.totalAmount,
-    required this.userId, // Initialize userId
+    required this.userId,
+    required this.userData,
   });
 
   @override
@@ -97,9 +101,16 @@ class _BookingDetailsPageState extends State<BookingDetailsPage> {
 
   Future<void> _updateDatabase(String paymentId) async {
     try {
-      await FirebaseFirestore.instance.collection('bookings').add({
-        'turfId': widget.turfData['id'],
-        'userId': widget.userId, // Use userId from widget
+      final bookingData = {
+        'turfId': widget.turfId,
+        'userId': widget.userId,
+        'userName': widget.userData['name'],
+        'userPhone': widget.userData['phone_number'],
+        'userEmail': widget.userData['email'],
+        'turfName': widget.turfData['name'],
+        'turfLocation': widget.turfData['location'],
+        'ownerName': widget.turfData['owner_name'],
+        'ownerPhone': widget.turfData['owner_phone'],
         'date': widget.selectedDate,
         'sport': widget.selectedSport,
         'box': widget.selectedBox,
@@ -108,9 +119,32 @@ class _BookingDetailsPageState extends State<BookingDetailsPage> {
         'paymentId': paymentId,
         'status': 'confirmed',
         'createdAt': FieldValue.serverTimestamp(),
-      });
+      };
 
-      // Navigate to a confirmation page or back to home
+      DocumentReference bookingRef = await FirebaseFirestore.instance
+          .collection('bookings')
+          .add(bookingData);
+
+      final bookingDataWithId = {
+        ...bookingData,
+        'bookingId': bookingRef.id,
+      };
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .collection('bookings')
+          .doc(bookingRef.id)
+          .set(bookingDataWithId);
+
+      await FirebaseFirestore.instance
+          .collection('turfs')
+          .doc(widget.turfId)
+          .collection('bookings')
+          .doc(bookingRef.id)
+          .set(bookingDataWithId);
+
+      _showTicket(paymentId);
       Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
       print("Error updating database: $e");

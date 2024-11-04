@@ -9,11 +9,20 @@ import 'package:url_launcher/url_launcher_string.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:lineup/pages/slot_booking_page.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 
 class TurfViewPage extends StatefulWidget {
   final Map<String, dynamic> turfData;
+  final String userId;
+  final String turfId;
+  final Map<String, dynamic> userData;
 
-  TurfViewPage({required this.turfData, required String userId});
+  TurfViewPage({
+    required this.turfData,
+    required this.userId,
+    required this.turfId,
+    required this.userData,
+  });
 
   @override
   _TurfViewPageState createState() => _TurfViewPageState();
@@ -25,6 +34,7 @@ class _TurfViewPageState extends State<TurfViewPage> {
     super.initState();
     // Remove the _fetchOwnerData() call
   }
+  
 
   @override
   Widget build(BuildContext context) {
@@ -81,13 +91,96 @@ class _TurfViewPageState extends State<TurfViewPage> {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blue),
                   ),
                   SizedBox(height: 20),
+                  _buildSectionTitle('Reviews'),
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('reviews')
+                        .where('turfId', isEqualTo: widget.turfId)
+                        .orderBy('createdAt', descending: true)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      print('Debug - Current TurfId: ${widget.turfId}');
+                      print('Debug - Snapshot connection state: ${snapshot.connectionState}');
+                      print('Debug - Has data: ${snapshot.hasData}');
+                      
+                      if (snapshot.hasError) {
+                        print('Debug - Error: ${snapshot.error}');
+                        return Center(child: Text('Error loading reviews'));
+                      }
+
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Center(child: CircularProgressIndicator());
+                      }
+
+                      final reviews = snapshot.data?.docs ?? [];
+                      print('Debug - Number of reviews: ${reviews.length}');
+
+                      return Column(
+                        children: [
+                          if (reviews.isNotEmpty) _buildAverageRating(reviews),
+                          
+                          ListView.builder(
+                            shrinkWrap: true,
+                            physics: NeverScrollableScrollPhysics(),
+                            itemCount: reviews.isEmpty ? 1 : reviews.length,
+                            itemBuilder: (context, index) {
+                              if (reviews.isEmpty) {
+                                return Card(
+                                  margin: EdgeInsets.all(16),
+                                  child: Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Column(
+                                      children: [
+                                        Icon(
+                                          Icons.rate_review_outlined,
+                                          size: 48,
+                                          color: Colors.grey[400],
+                                        ),
+                                        SizedBox(height: 16),
+                                        Text(
+                                          'No reviews yet',
+                                          style: TextStyle(
+                                            color: Colors.grey[600],
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        SizedBox(height: 8),
+                                        Text(
+                                          'Be the first to review this turf!',
+                                          style: TextStyle(
+                                            color: Colors.grey[500],
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              final reviewData = reviews[index].data() as Map<String, dynamic>;
+                              return _buildReviewCard(reviewData);
+                            },
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  SizedBox(height: 20),
                   Center(
                     child: ElevatedButton(
                       onPressed: () {
+                        print('Debug: Turf ID being passed: ${widget.turfId}');
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => SlotBookingPage(turfData: widget.turfData, userId: 'userId',),
+                            builder: (context) => SlotBookingPage(
+                              turfData: widget.turfData,
+                              turfId: widget.turfId,
+                              userId: widget.userId,
+                              userData: widget.userData,
+                            ),
                           ),
                         );
                       },
@@ -105,6 +198,7 @@ class _TurfViewPageState extends State<TurfViewPage> {
         ),
       ),
     );
+    
   }
 
   Widget _buildImageSlider(List<dynamic> images) {
@@ -292,7 +386,9 @@ class _TurfViewPageState extends State<TurfViewPage> {
       case 'refreshments': return Icons.local_cafe;
       default: return Icons.star;
     }
+    
   }
+  
 
   Future<String> _getAddressFromLatLng(GeoPoint location) async {
     try {
@@ -366,4 +462,159 @@ class _TurfViewPageState extends State<TurfViewPage> {
       );
     }
   }
+
+  Widget _buildAverageRating(List<QueryDocumentSnapshot> reviews) {
+    if (reviews.isEmpty) return SizedBox.shrink();
+
+    double totalRating = 0;
+    reviews.forEach((doc) {
+      final review = doc.data() as Map<String, dynamic>;
+      totalRating += review['rating'] ?? 0;
+    });
+
+    double averageRating = totalRating / reviews.length;
+
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text(
+              'Average Rating',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                RatingBarIndicator(
+                  rating: averageRating,
+                  itemBuilder: (context, index) => Icon(
+                    Icons.star,
+                    color: Colors.amber,
+                  ),
+                  itemCount: 5,
+                  itemSize: 24.0,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  averageRating.toStringAsFixed(1),
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.amber,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 8),
+            Text(
+              '${reviews.length} ${reviews.length == 1 ? 'review' : 'reviews'}',
+              style: TextStyle(
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReviewCard(Map<String, dynamic> review) {
+    return Card(
+      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: Colors.green[100],
+                        child: Text(
+                          (review['userName'] ?? 'A')[0].toUpperCase(),
+                          style: TextStyle(
+                            color: Colors.green[800],
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          review['userName'] ?? 'Anonymous',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  _formatDate(review['createdAt']),
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                RatingBarIndicator(
+                  rating: (review['rating'] ?? 0).toDouble(),
+                  itemBuilder: (context, index) => Icon(
+                    Icons.star,
+                    color: Colors.amber,
+                  ),
+                  itemCount: 5,
+                  itemSize: 20.0,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  (review['rating'] ?? 0).toString(),
+                  style: TextStyle(
+                    color: Colors.amber,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            if (review['review']?.isNotEmpty ?? false) ...[
+              SizedBox(height: 12),
+              Text(
+                review['review'] ?? '',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[800],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(dynamic date) {
+    if (date == null) return '';
+    if (date is Timestamp) {
+      return DateFormat('MMM d, yyyy').format(date.toDate());
+    }
+    return '';
+  }
 }
+
+

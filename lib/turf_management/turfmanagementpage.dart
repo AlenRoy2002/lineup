@@ -10,6 +10,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:intl/intl.dart';
+import 'package:lineup/turf_management/manage_bookings_page.dart';
 
 class TurfHomePage extends StatelessWidget {
   final String userId;
@@ -39,7 +40,12 @@ class TurfHomePage extends StatelessWidget {
             }
           }),
           _buildCard(context, 'Manage Bookings', Icons.calendar_today, () {
-            // Navigate to Manage Bookings page
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ManageBookingsPage(turfId: userId),
+              ),
+            );
           }),
           _buildCard(context, 'Financial Reports', Icons.bar_chart, () {
             // Navigate to Financial Reports page

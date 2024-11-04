@@ -1,4 +1,4 @@
-// ignore_for_file: prefer_const_constructors
+// ignore_for_file: prefer_const_constructors, unused_import
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +12,10 @@ import 'package:lineup/turf_management/turfmanagementpage.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:carousel_slider/carousel_slider.dart';
+import 'package:intl/intl.dart';
+
+import 'package:url_launcher/url_launcher_string.dart';
+import 'package:lineup/pages/notification_page.dart';
 
 class Homepage extends StatefulWidget {
   const Homepage({super.key});
@@ -36,12 +40,17 @@ class _HomepageState extends State<Homepage> {
     'images/0004.jpg',
   ];
 
+  // Add these stream controllers at the top of the class
+  late Stream<QuerySnapshot> bookingsStream;
+  bool isNotificationVisible = false;
+
   @override
   void initState() {
     super.initState();
     _fetchUserData();
     _initializeTurfStream();
     _getCurrentLocation();
+    _initializeBookingsStream();
   }
 
   Future<void> _fetchUserData() async {
@@ -78,7 +87,11 @@ class _HomepageState extends State<Homepage> {
         .collection('turfs')
         .snapshots()
         .map((snapshot) => snapshot.docs
-            .map((doc) => doc.data() as Map<String, dynamic>)
+            .map((doc) {
+              Map<String, dynamic> data = doc.data();
+              data['id'] = doc.id;
+              return data;
+            })
             .toList());
   }
 
@@ -111,27 +124,33 @@ class _HomepageState extends State<Homepage> {
     );
   }
 
-
+  void _initializeBookingsStream() {
+    bookingsStream = FirebaseFirestore.instance
+        .collection('bookings')
+        .where('userId', isEqualTo: user.uid)
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
+      if (index == 2) { // Notifications tab
+        isNotificationVisible = true;
+      }
     });
   }
 
   Widget _buildContent() {
-    switch (_selectedIndex) {
-      case 0:
-        return _buildHomeContent(); // New method for home content
-      case 1:
-        return Center(child: Text('Search Content', style: TextStyle(fontSize: 24)));
-      case 2:
-        return Center(child: Text('Notifications Content', style: TextStyle(fontSize: 24)));
-      case 3:
-        return _buildProfileContent();
-      default:
-        return Center(child: Text('Home Content', style: TextStyle(fontSize: 24)));
-    }
+    return IndexedStack(
+      index: _selectedIndex,
+      children: [
+        _buildHomeContent(),
+        Center(child: Text('Search Content', style: TextStyle(fontSize: 24))),
+        NotificationPage(key: PageStorageKey('notifications'), userId: user.uid),
+        _buildProfileContent(),
+      ],
+    );
   }
 
   Widget _buildHomeContent() {
@@ -323,7 +342,6 @@ class _HomepageState extends State<Homepage> {
   }
 
   Widget _buildTurfListItem(Map<String, dynamic> turf, String locationName) {
-    
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -332,18 +350,24 @@ class _HomepageState extends State<Homepage> {
         contentPadding: const EdgeInsets.all(16.0),
         leading: CircleAvatar(
           radius: 30,
-          backgroundImage: NetworkImage(turf['images'][0]), // Displaying the first image from the list
+          backgroundImage: NetworkImage(turf['images'][0]),
         ),
         title: Text(
-         turf['name'] ?? 'Unknown',
+          turf['name'] ?? 'Unknown',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(locationName),
         onTap: () {
+          print('Debug - Turf ID: ${turf['id']}');
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => TurfViewPage(turfData: turf,userId: user.uid),
+              builder: (context) => TurfViewPage(
+                turfData: turf,
+                userId: user.uid,
+                userData: userData,
+                turfId: turf['id'],
+              ),
             ),
           );
         },
@@ -473,4 +497,10 @@ class _HomepageState extends State<Homepage> {
       ),
     );
   }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
 }
+
