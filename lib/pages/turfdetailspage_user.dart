@@ -32,7 +32,12 @@ class _TurfViewPageState extends State<TurfViewPage> {
   @override
   void initState() {
     super.initState();
-    // Remove the _fetchOwnerData() call
+    print('Debug - TurfViewPage initialized with turfId: ${widget.turfId}');
+    // Verify the turf data
+    print('Debug - Turf Data: ${widget.turfData}');
+    print('Debug - TurfId from widget: ${widget.turfId}');
+    // Also print the full turf data to verify
+    print('Debug - Full turf data: ${widget.turfData}');
   }
   
 
@@ -99,12 +104,20 @@ class _TurfViewPageState extends State<TurfViewPage> {
                         .orderBy('createdAt', descending: true)
                         .snapshots(),
                     builder: (context, snapshot) {
-                      print('Debug - Current TurfId: ${widget.turfId}');
-                      print('Debug - Snapshot connection state: ${snapshot.connectionState}');
-                      print('Debug - Has data: ${snapshot.hasData}');
+                      print('Debug - Query Parameters:');
+                      print('Turf Name being queried: ${widget.turfData['name']}');
+                      print('Connection State: ${snapshot.connectionState}');
                       
+                      if (snapshot.hasData) {
+                        print('Number of reviews found: ${snapshot.data!.docs.length}');
+                        snapshot.data!.docs.forEach((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          print('Review Data: $data');
+                        });
+                      }
+
                       if (snapshot.hasError) {
-                        print('Debug - Error: ${snapshot.error}');
+                        print('Error in query: ${snapshot.error}');
                         return Center(child: Text('Error loading reviews'));
                       }
 
@@ -113,18 +126,16 @@ class _TurfViewPageState extends State<TurfViewPage> {
                       }
 
                       final reviews = snapshot.data?.docs ?? [];
-                      print('Debug - Number of reviews: ${reviews.length}');
 
                       return Column(
                         children: [
                           if (reviews.isNotEmpty) _buildAverageRating(reviews),
-                          
                           ListView.builder(
                             shrinkWrap: true,
                             physics: NeverScrollableScrollPhysics(),
                             itemCount: reviews.isEmpty ? 1 : reviews.length,
                             itemBuilder: (context, index) {
-                              if (reviews.isEmpty) {
+                             if (reviews.isEmpty) {
                                 return Card(
                                   margin: EdgeInsets.all(16),
                                   child: Padding(

@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
@@ -254,17 +255,30 @@ class _NotificationPageState extends State<NotificationPage> with AutomaticKeepA
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
-                                    TextButton.icon(
-                                      icon: Icon(Icons.rate_review, color: Colors.amber),
-                                      label: Text(
-                                        booking['hasReview'] == true ? 'Edit Review' : 'Leave Review',
-                                        style: TextStyle(
-                                          color: Colors.amber,
-                                          fontWeight: FontWeight.bold,
+                                    if (booking['hasReview'] != true)
+                                      TextButton.icon(
+                                        icon: Icon(Icons.rate_review, color: Colors.amber),
+                                        label: Text(
+                                          'Leave Review',
+                                          style: TextStyle(
+                                            color: Colors.amber,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
+                                        onPressed: () => _showReviewDialog(context, booking),
+                                      )
+                                    else
+                                      TextButton.icon(
+                                        icon: Icon(Icons.visibility, color: Colors.blue),
+                                        label: Text(
+                                          'View Review',
+                                          style: TextStyle(
+                                            color: Colors.blue,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        onPressed: () => _showViewReviewDialog(context, booking),
                                       ),
-                                      onPressed: () => _showReviewDialog(context, booking),
-                                    ),
                                   ],
                                 ),
                               ),
@@ -671,38 +685,52 @@ class _NotificationPageState extends State<NotificationPage> with AutomaticKeepA
   bool _isBookingCompleted(DateTime bookingDate, List<String> timeSlots) {
     if (timeSlots.isEmpty) return false;
     
-    int lastSlotHour = int.parse(timeSlots.last.split(':')[0]);
-    DateTime bookingEndTime = DateTime(
-      bookingDate.year,
-      bookingDate.month,
-      bookingDate.day,
-      lastSlotHour + 1, // Adding 1 hour to last slot
-    );
-    
-    return DateTime.now().isAfter(bookingEndTime);
+    try {
+      // Get the last time slot
+      String lastSlot = timeSlots.last;
+      
+      // Parse time in "HH:mm" format
+      List<String> timeParts = lastSlot.split(':');
+      if (timeParts.length != 2) return false;
+      
+      // Parse hours and minutes, handling any potential format issues
+      int lastHour = int.tryParse(timeParts[0].trim()) ?? 0;
+      int lastMinute = int.tryParse(timeParts[1].trim()) ?? 0;
+      
+      // Create DateTime for the end of the booking
+      DateTime bookingEndTime = DateTime(
+        bookingDate.year,
+        bookingDate.month,
+        bookingDate.day,
+        lastHour,
+        lastMinute,
+      );
+      
+      // Add 30 minutes buffer after the booking ends
+      bookingEndTime = bookingEndTime.add(Duration(minutes: 30));
+      
+      // Debug prints
+      print('Debug - Last time slot: $lastSlot');
+      print('Debug - Booking date: $bookingDate');
+      print('Debug - Booking end time: $bookingEndTime');
+      print('Debug - Current time: ${DateTime.now()}');
+      
+      return DateTime.now().isAfter(bookingEndTime);
+    } catch (e) {
+      print('Error checking booking completion: $e');
+      return false;
+    }
   }
 
   // Add this method to show review dialog
   void _showReviewDialog(BuildContext context, Map<String, dynamic> booking) {
-    print('Debug - Opening review dialog for booking: ${booking['bookingId']}');
-    
+    // Don't show dialog if booking has a review
+    if (booking['hasReview'] == true) {
+      return;
+    }
+
     final TextEditingController reviewController = TextEditingController();
     double rating = 3.0;
-
-    // If there's an existing review, fetch it
-    if (booking['hasReview'] == true && booking['reviewId'] != null) {
-      FirebaseFirestore.instance
-          .collection('reviews')
-          .doc(booking['reviewId'])
-          .get()
-          .then((reviewDoc) {
-        if (reviewDoc.exists) {
-          final reviewData = reviewDoc.data()!;
-          reviewController.text = reviewData['review'] ?? '';
-          rating = (reviewData['rating'] ?? 3.0).toDouble();
-        }
-      });
-    }
 
     showDialog(
       context: context,
@@ -712,7 +740,7 @@ class _NotificationPageState extends State<NotificationPage> with AutomaticKeepA
             return AlertDialog(
               backgroundColor: Color(0xFF2A2A2A),
               title: Text(
-                booking['hasReview'] == true ? 'Edit Your Review' : 'Review Your Experience',
+                'Review Your Experience',
                 style: TextStyle(color: Colors.white),
               ),
               content: Column(
@@ -789,7 +817,6 @@ class _NotificationPageState extends State<NotificationPage> with AutomaticKeepA
     try {
       print('Debug - Starting review submission');
       print('Debug - Booking data: $booking');
-      print('Debug - TurfId from booking: ${booking['turfId']}');
 
       // Get user data
       final userDoc = await FirebaseFirestore.instance
@@ -812,16 +839,9 @@ class _NotificationPageState extends State<NotificationPage> with AutomaticKeepA
 
       print('Debug - Review data to be submitted: $reviewData');
 
-      // Create review document
-      final reviewRef = await FirebaseFirestore.instance
+      await FirebaseFirestore.instance
           .collection('reviews')
           .add(reviewData);
-
-      print('Debug - Review created with ID: ${reviewRef.id}');
-
-      // Verify the review was created
-      final createdReview = await reviewRef.get();
-      print('Debug - Created review data: ${createdReview.data()}');
 
       // Update booking
       await FirebaseFirestore.instance
@@ -829,12 +849,8 @@ class _NotificationPageState extends State<NotificationPage> with AutomaticKeepA
           .doc(booking['bookingId'])
           .update({
             'hasReview': true,
-            'reviewId': reviewRef.id,
           });
 
-      print('Debug - Review submission completed successfully');
-
-      // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Thank you for your review!'),
@@ -845,7 +861,6 @@ class _NotificationPageState extends State<NotificationPage> with AutomaticKeepA
       Navigator.pop(context);
     } catch (e) {
       print('Error submitting review: $e');
-      print('Debug - Full booking data: $booking');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to submit review. Please try again.'),
@@ -853,5 +868,86 @@ class _NotificationPageState extends State<NotificationPage> with AutomaticKeepA
         ),
       );
     }
+  }
+
+  void _showViewReviewDialog(BuildContext context, Map<String, dynamic> booking) {
+    FirebaseFirestore.instance
+        .collection('reviews')
+        .where('bookingId', isEqualTo: booking['bookingId'])
+        .get()
+        .then((querySnapshot) {
+      if (querySnapshot.docs.isNotEmpty) {
+        final reviewData = querySnapshot.docs.first.data();
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              backgroundColor: Color(0xFF2A2A2A),
+              title: Text(
+                'Your Review',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      RatingBarIndicator(
+                        rating: (reviewData['rating'] ?? 0).toDouble(),
+                        itemBuilder: (context, index) => Icon(
+                          Icons.star,
+                          color: Colors.amber,
+                        ),
+                        itemCount: 5,
+                        itemSize: 24.0,
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    reviewData['review'] ?? '',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Posted on: ${_formatDate(reviewData['createdAt'])}',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  child: Text('Close', style: TextStyle(color: Colors.white)),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    });
+  }
+
+  // Add this method to format dates
+  String _formatDate(dynamic date) {
+    if (date == null) return '';
+    
+    if (date is Timestamp) {
+      return DateFormat('MMM d, yyyy, h:mm a').format(date.toDate());
+    }
+    
+    if (date is DateTime) {
+      return DateFormat('MMM d, yyyy, h:mm a').format(date);
+    }
+    
+    return '';
   }
 }
