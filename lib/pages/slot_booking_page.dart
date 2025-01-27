@@ -129,11 +129,14 @@ class _SlotBookingPageState extends State<SlotBookingPage> {
         23, 59, 59
       );
 
+      // Make sure we only query for the selected box and sport
       final snapshot = await FirebaseFirestore.instance
           .collection('bookings')
           .where('turfId', isEqualTo: widget.turfId)
           .where('date', isGreaterThanOrEqualTo: startOfDay)
           .where('date', isLessThanOrEqualTo: endOfDay)
+          .where('box', isEqualTo: selectedBox)
+          .where('sport', isEqualTo: selectedSport)
           .get();
 
       setState(() {
@@ -142,9 +145,8 @@ class _SlotBookingPageState extends State<SlotBookingPage> {
           List<String> slots = List<String>.from(doc['timeSlots']);
           bookedTimeSlots.addAll(slots);
         }
+        print('Booked slots for $selectedBox: $bookedTimeSlots');
       });
-
-      print('Booked slots for ${DateFormat('yyyy-MM-dd').format(selectedDate)}: $bookedTimeSlots');
     } catch (e) {
       print('Error fetching booked time slots: $e');
     }

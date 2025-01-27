@@ -668,17 +668,50 @@ class _NotificationPageState extends State<NotificationPage> with AutomaticKeepA
   bool _isWithinTwoHours(DateTime bookingDate, List<String> timeSlots) {
     if (timeSlots.isEmpty) return false;
     
-    // Parse the first time slot to get the hour
-    int bookingHour = int.parse(timeSlots[0].split(':')[0]);
-    DateTime bookingDateTime = DateTime(
-      bookingDate.year,
-      bookingDate.month,
-      bookingDate.day,
-      bookingHour,
-    );
-    
-    Duration difference = bookingDateTime.difference(DateTime.now());
-    return difference.inHours <= 2 && difference.inHours >= 0;
+    try {
+      // Get the first time slot
+      String firstSlot = timeSlots.first;
+      
+      // Convert 12-hour format to 24-hour format
+      DateFormat inputFormat = DateFormat('h:mm a');
+      DateFormat outputFormat = DateFormat('HH:mm');
+      DateTime parsedTime = inputFormat.parse(firstSlot);
+      String militaryTime = outputFormat.format(parsedTime);
+      
+      // Split the time into hours and minutes
+      List<String> timeParts = militaryTime.split(':');
+      int startHour = int.parse(timeParts[0]);
+      int startMinute = int.parse(timeParts[1]);
+      
+      // Create DateTime for the start of the booking
+      DateTime bookingStartTime = DateTime(
+        bookingDate.year,
+        bookingDate.month,
+        bookingDate.day,
+        startHour,
+        startMinute,
+      );
+      
+      // Get current time
+      DateTime now = DateTime.now();
+      
+      // Calculate difference
+      Duration difference = bookingStartTime.difference(now);
+      
+      // Debug prints
+      print('Debug - First time slot: $firstSlot');
+      print('Debug - Military time: $militaryTime');
+      print('Debug - Booking date: $bookingDate');
+      print('Debug - Booking start time: $bookingStartTime');
+      print('Debug - Current time: $now');
+      print('Debug - Time difference (hours): ${difference.inHours}');
+      
+      // Return true if booking is within next 2 hours and hasn't started yet
+      return difference.inHours >= 0 && difference.inHours <= 2;
+    } catch (e) {
+      print('Error checking within two hours: $e');
+      return false;
+    }
   }
 
   // Add this method to check if booking is completed
@@ -689,13 +722,16 @@ class _NotificationPageState extends State<NotificationPage> with AutomaticKeepA
       // Get the last time slot
       String lastSlot = timeSlots.last;
       
-      // Parse time in "HH:mm" format
-      List<String> timeParts = lastSlot.split(':');
-      if (timeParts.length != 2) return false;
+      // Convert 12-hour format to 24-hour format
+      DateFormat inputFormat = DateFormat('h:mm a');
+      DateFormat outputFormat = DateFormat('HH:mm');
+      DateTime parsedTime = inputFormat.parse(lastSlot);
+      String militaryTime = outputFormat.format(parsedTime);
       
-      // Parse hours and minutes, handling any potential format issues
-      int lastHour = int.tryParse(timeParts[0].trim()) ?? 0;
-      int lastMinute = int.tryParse(timeParts[1].trim()) ?? 0;
+      // Split the time into hours and minutes
+      List<String> timeParts = militaryTime.split(':');
+      int lastHour = int.parse(timeParts[0]);
+      int lastMinute = int.parse(timeParts[1]);
       
       // Create DateTime for the end of the booking
       DateTime bookingEndTime = DateTime(
@@ -706,16 +742,18 @@ class _NotificationPageState extends State<NotificationPage> with AutomaticKeepA
         lastMinute,
       );
       
-      // Add 30 minutes buffer after the booking ends
-      bookingEndTime = bookingEndTime.add(Duration(minutes: 30));
+      // Compare with current time
+      DateTime now = DateTime.now();
       
       // Debug prints
       print('Debug - Last time slot: $lastSlot');
+      print('Debug - Military time: $militaryTime');
       print('Debug - Booking date: $bookingDate');
       print('Debug - Booking end time: $bookingEndTime');
-      print('Debug - Current time: ${DateTime.now()}');
+      print('Debug - Current time: $now');
+      print('Debug - Is completed: ${now.isAfter(bookingEndTime)}');
       
-      return DateTime.now().isAfter(bookingEndTime);
+      return now.isAfter(bookingEndTime);
     } catch (e) {
       print('Error checking booking completion: $e');
       return false;
