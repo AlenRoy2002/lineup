@@ -59,6 +59,11 @@ dependencies:
   fluttertoast: ^8.0.9
   flutter_svg: ^1.0.0
   flutter_rating_bar: ^4.0.1
+  http: ^1.1.0
+  fl_chart: ^0.65.0
+  web3dart: ^2.3.5
+  flutter_secure_storage: ^5.0.2
+  
  
 
 

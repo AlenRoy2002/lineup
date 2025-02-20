@@ -16,6 +16,8 @@ import 'package:intl/intl.dart';
 
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:lineup/pages/notification_page.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class Homepage extends StatefulWidget {
   const Homepage({super.key});
@@ -44,6 +46,21 @@ class _HomepageState extends State<Homepage> {
   late Stream<QuerySnapshot> bookingsStream;
   bool isNotificationVisible = false;
 
+  // Add these new variables
+  final TextEditingController _chatController = TextEditingController();
+  bool _isChatOpen = false;
+
+  // Add these to your existing variables
+  List<Map<String, dynamic>> chatMessages = [];
+  bool _isProcessingMessage = false;
+
+  // Update the API variables
+  final String _apiKey = "g4a-THXUe7zcObEXf99p5OtsfLTHSTpFaonnad7"; // Your actual API key
+  final String _baseUrl = "https://api.gpt4-all.xyz/v1";
+
+  // Add these variables at the class level
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +68,8 @@ class _HomepageState extends State<Homepage> {
     _initializeTurfStream();
     _getCurrentLocation();
     _initializeBookingsStream();
+    print('API Key: $_apiKey');
+    print('Base URL: $_baseUrl');
   }
 
   Future<void> _fetchUserData() async {
@@ -495,11 +514,325 @@ class _HomepageState extends State<Homepage> {
         unselectedItemColor: Colors.grey,
         onTap: _onItemTapped,
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          setState(() {
+            _isChatOpen = !_isChatOpen;
+          });
+        },
+        backgroundColor: Colors.green,
+        child: Icon(_isChatOpen ? Icons.close : Icons.chat),
+      ),
+      bottomSheet: _isChatOpen ? _buildChatInterface() : null,
     );
   }
 
   @override
   void dispose() {
+    _chatController.dispose();
     super.dispose();
+  }
+
+  Future<String> _processMessage(String userMessage) async {
+    try {
+      // Fetch all relevant user data
+      final userProfile = await _getUserProfile();
+      final bookings = await _getUserBookings();
+      final reviews = await _getUserReviews();
+      
+      // Create comprehensive context
+      String contextPrompt = """
+You are an AI assistant for the LineUp turf booking app. Here's the current user's complete profile:
+
+User Details:
+- Name: ${userProfile['name']}
+- Email: ${userProfile['email']}
+- Phone: ${userProfile['phone_number']}
+- Role: ${userProfile['role']}
+- Location: ${_currentLocationName}
+
+Recent Bookings:
+${_formatBookings(bookings)}
+
+Reviews Given:
+${_formatReviews(reviews)}
+
+Please provide personalized responses based on this user's data and history.
+""";
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_apiKey',
+        },
+        body: jsonEncode({
+          'model': 'gpt-3.5-turbo',
+          'messages': [
+            {'role': 'system', 'content': contextPrompt},
+            {'role': 'user', 'content': userMessage}
+          ],
+          'temperature': 0.7,
+          'max_tokens': 500,
+        }),
+      );
+
+      print('API Response Status: ${response.statusCode}');
+      print('API Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        String aiResponse = data['choices'][0]['message']['content'];
+        return await _enrichResponseWithData(aiResponse);
+      } else {
+        throw Exception('API Error: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error: $e');
+      return 'I apologize, but I encountered an error. Please try again.';
+    }
+  }
+
+  Future<Map<String, dynamic>> _getUserProfile() async {
+    try {
+      DocumentSnapshot doc = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      return doc.data() as Map<String, dynamic>;
+    } catch (e) {
+      print('Error fetching user profile: $e');
+      return {};
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _getUserBookings() async {
+    try {
+      QuerySnapshot bookings = await _firestore
+          .collection('bookings')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('createdAt', descending: true)
+          .limit(5)
+          .get();
+      
+      return bookings.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+    } catch (e) {
+      print('Error fetching bookings: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _getUserReviews() async {
+    try {
+      QuerySnapshot reviews = await _firestore
+          .collection('reviews')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('createdAt', descending: true)
+          .get();
+      
+      return reviews.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+    } catch (e) {
+      print('Error fetching reviews: $e');
+      return [];
+    }
+  }
+
+  String _formatBookings(List<Map<String, dynamic>> bookings) {
+    if (bookings.isEmpty) return "No recent bookings";
+    
+    return bookings.map((booking) => """
+• Turf: ${booking['turfName']}
+  Date: ${DateFormat('MMM d, yyyy').format(booking['date'].toDate())}
+  Time: ${booking['timeSlots'].join(', ')}
+  Status: ${booking['status']}""").join('\n');
+  }
+
+  String _formatReviews(List<Map<String, dynamic>> reviews) {
+    if (reviews.isEmpty) return "No reviews given";
+    
+    return reviews.map((review) => """
+• Turf: ${review['turfName']}
+  Rating: ${review['rating']} stars
+  Comment: ${review['review']}""").join('\n');
+  }
+
+  Future<String> _getAvailableSlots() async {
+    try {
+      // Get current date
+      DateTime now = DateTime.now();
+      
+      // Get all bookings for the selected turf
+      QuerySnapshot bookingsSnapshot = await _firestore
+          .collection('bookings')
+          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(now))
+          .get();
+
+      // Get all booked time slots
+      Set<String> bookedSlots = {};
+      for (var doc in bookingsSnapshot.docs) {
+        Map<String, dynamic> booking = doc.data() as Map<String, dynamic>;
+        List<String> timeSlots = List<String>.from(booking['timeSlots'] ?? []);
+        bookedSlots.addAll(timeSlots);
+      }
+
+      // Get all available time slots (assuming you have predefined time slots)
+      List<String> allTimeSlots = [
+        '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
+        '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM',
+        '5:00 PM', '6:00 PM', '7:00 PM', '8:00 PM'
+      ];
+
+      // Filter out booked slots
+      List<String> availableSlots = allTimeSlots
+          .where((slot) => !bookedSlots.contains(slot))
+          .toList();
+
+      if (availableSlots.isEmpty) {
+        return "No slots available for today.";
+      }
+
+      return "Available slots:\n${availableSlots.join('\n')}";
+    } catch (e) {
+      print('Error getting available slots: $e');
+      return "Error fetching available slots.";
+    }
+  }
+
+  Future<String> _enrichResponseWithData(String response) async {
+    try {
+      if (response.contains('[AVAILABLE_SLOTS]')) {
+        final slots = await _getAvailableSlots();
+        response = response.replaceAll('[AVAILABLE_SLOTS]', slots);
+      }
+
+      if (response.contains('[BOOKINGS]')) {
+        final bookings = await _getUserBookings();
+        String bookingsText = _formatBookings(bookings);
+        response = response.replaceAll('[BOOKINGS]', bookingsText);
+      }
+
+      if (response.contains('[PROFILE]')) {
+        final profile = await _getUserProfile();
+        String profileText = """
+Name: ${profile['name']}
+Email: ${profile['email']}
+Phone: ${profile['phone_number']}
+Role: ${profile['role']}""";
+        response = response.replaceAll('[PROFILE]', profileText);
+      }
+
+      return response;
+    } catch (e) {
+      print('Error enriching response: $e');
+      return response;
+    }
+  }
+
+  void _handleMessage(String message) async {
+    if (message.trim().isEmpty) return;
+
+    setState(() {
+      chatMessages.add({
+        'role': 'user',
+        'content': message,
+      });
+      _isProcessingMessage = true;
+    });
+
+    try {
+      final response = await _processMessage(message);
+      
+      setState(() {
+        chatMessages.add({
+          'role': 'assistant',
+          'content': response,
+        });
+      });
+    } catch (e) {
+      print('Error in message handling: $e');
+      setState(() {
+        chatMessages.add({
+          'role': 'assistant',
+          'content': 'I apologize, but I encountered an error. Please try again.',
+        });
+      });
+    } finally {
+      setState(() {
+        _isProcessingMessage = false;
+      });
+    }
+  }
+
+  Widget _buildChatInterface() {
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.builder(
+            itemCount: chatMessages.length,
+            itemBuilder: (context, index) {
+              final message = chatMessages[index];
+              final isUser = message['role'] == 'user';
+              
+              return Container(
+                margin: EdgeInsets.symmetric(
+                  vertical: 8,
+                  horizontal: 16,
+                ),
+                alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isUser ? Colors.green : Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    message['content'] ?? '',
+                    style: TextStyle(
+                      color: isUser ? Colors.white : Colors.black,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (_isProcessingMessage)
+          Padding(
+            padding: EdgeInsets.all(8.0),
+            child: CircularProgressIndicator(),
+          ),
+        _buildMessageInput(),
+      ],
+    );
+  }
+
+  Widget _buildMessageInput() {
+    final TextEditingController _controller = TextEditingController();
+    
+    return Padding(
+      padding: EdgeInsets.all(8.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              decoration: InputDecoration(
+                hintText: 'Ask me anything about turf booking...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.send),
+            onPressed: () {
+              if (_controller.text.isNotEmpty) {
+                _handleMessage(_controller.text);
+                _controller.clear();
+              }
+            },
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -11,6 +11,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:intl/intl.dart';
 import 'package:lineup/turf_management/manage_bookings_page.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:web3dart/web3dart.dart';
+import 'package:http/http.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:lineup/turf_management/financial_report.dart';
 
 class TurfHomePage extends StatelessWidget {
   final String userId;
@@ -48,7 +53,12 @@ class TurfHomePage extends StatelessWidget {
             );
           }),
           _buildCard(context, 'Financial Reports', Icons.bar_chart, () {
-            // Navigate to Financial Reports page
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => FinancialReportPage(userId: userId, turfId: userId),
+              ),
+            );
           }),
           _buildCard(context, 'Settings', Icons.settings, () {
             // Navigate to Settings page
@@ -988,3 +998,374 @@ class _MapSelectionPageState extends State<MapSelectionPage> {
     );
   }
 }
+
+// class FinancialReportPage extends StatefulWidget {
+//   final String userId;
+
+//   const FinancialReportPage({Key? key, required this.userId}) : super(key: key);
+
+//   @override
+//   _FinancialReportPageState createState() => _FinancialReportPageState();
+// }
+
+// class _FinancialReportPageState extends State<FinancialReportPage> {
+//   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+//   final storage = FlutterSecureStorage();
+//   late Web3Client _web3client;
+//   bool _isLoading = true;
+//   Map<String, dynamic> _statistics = {};
+//   List<Map<String, dynamic>> _transactions = [];
+  
+//   // Blockchain configuration
+//   static const String _rpcUrl = 'YOUR_BLOCKCHAIN_RPC_URL';
+//   static const String _contractAddress = 'YOUR_SMART_CONTRACT_ADDRESS';
+
+//   @override
+//   void initState() {
+//     super.initState();
+//     _initializeBlockchain();
+//     _loadFinancialData();
+//   }
+
+//   Future<void> _initializeBlockchain() async {
+//     final client = Client();
+//     _web3client = Web3Client(_rpcUrl, client);
+//   }
+
+//   Future<void> _loadFinancialData() async {
+//     try {
+//       setState(() => _isLoading = true);
+
+//       // Fetch booking statistics
+//       final bookingStats = await _getBookingStatistics();
+      
+//       // Fetch payment records
+//       final payments = await _getPaymentRecords();
+      
+//       // Fetch blockchain transactions
+//       final blockchainData = await _getBlockchainTransactions();
+
+//       setState(() {
+//         _statistics = bookingStats;
+//         _transactions = payments;
+//         _isLoading = false;
+//       });
+//     } catch (e) {
+//       print('Error loading financial data: $e');
+//       setState(() => _isLoading = false);
+//     }
+//   }
+
+//   Future<Map<String, dynamic>> _getBookingStatistics() async {
+//     final QuerySnapshot bookings = await _firestore
+//         .collection('bookings')
+//         .where('userId', isEqualTo: widget.userId)
+//         .get();
+
+//     double totalRevenue = 0;
+//     Map<String, int> sportsCounts = {};
+//     Map<String, double> monthlyRevenue = {};
+
+//     for (var doc in bookings.docs) {
+//       final data = doc.data() as Map<String, dynamic>;
+//       final amount = data['totalAmount'] as double;
+//       final sport = data['sport'] as String;
+//       final date = (data['date'] as Timestamp).toDate();
+//       final monthKey = DateFormat('MMM yyyy').format(date);
+
+//       totalRevenue += amount;
+//       sportsCounts[sport] = (sportsCounts[sport] ?? 0) + 1;
+//       monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] ?? 0) + amount;
+//     }
+
+//     return {
+//       'totalRevenue': totalRevenue,
+//       'totalBookings': bookings.docs.length,
+//       'sportsCounts': sportsCounts,
+//       'monthlyRevenue': monthlyRevenue,
+//     };
+//   }
+
+//   Future<List<Map<String, dynamic>>> _getPaymentRecords() async {
+//     try {
+//       final QuerySnapshot payments = await _firestore
+//           .collection('bookings')
+//           .where('userId', isEqualTo: widget.userId)
+//           .where('status', isEqualTo: 'completed')
+//           .orderBy('createdAt', descending: true)
+//           .get();
+
+//       return payments.docs.map((doc) {
+//         final data = doc.data() as Map<String, dynamic>;
+//         return {
+//           'bookingId': doc.id,
+//           'amount': data['totalAmount'],
+//           'date': data['createdAt'],
+//           'transactionHash': data['transactionHash'],
+//         };
+//       }).toList();
+//     } catch (e) {
+//       print('Error fetching payment records: $e');
+//       return [];
+//     }
+//   }
+
+//   Future<List<Map<String, dynamic>>> _getBlockchainTransactions() async {
+//     try {
+//       // Implement your blockchain transaction fetching logic here
+//       return [];
+//     } catch (e) {
+//       print('Error fetching blockchain transactions: $e');
+//       return [];
+//     }
+//   }
+
+//   void _showTransactionDetails(Map<String, dynamic> transaction) {
+//     showDialog(
+//       context: context,
+//       builder: (context) => AlertDialog(
+//         title: Text('Transaction Details'),
+//         content: Column(
+//           mainAxisSize: MainAxisSize.min,
+//           crossAxisAlignment: CrossAxisAlignment.start,
+//           children: [
+//             Text('Booking ID: ${transaction['bookingId']}'),
+//             Text('Amount: ₹${transaction['amount']}'),
+//             Text('Date: ${DateFormat('MMM d, yyyy').format(transaction['date'].toDate())}'),
+//             SizedBox(height: 16),
+//             _buildBlockchainVerification(transaction),
+//           ],
+//         ),
+//         actions: [
+//           TextButton(
+//             child: Text('Close'),
+//             onPressed: () => Navigator.pop(context),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+
+//   Future<String> _verifyBlockchainTransaction(String? transactionHash) async {
+//     if (transactionHash == null) return 'not verified';
+    
+//     try {
+//       // Implement your blockchain verification logic here
+//       return 'verified';
+//     } catch (e) {
+//       print('Error verifying blockchain transaction: $e');
+//       return 'verification failed';
+//     }
+//   }
+
+//   Widget _buildRevenueChart() {
+//     final monthlyData = Map<String, double>.from(_statistics['monthlyRevenue'] ?? {});
+    
+//     return Container(
+//       height: 300,
+//       padding: EdgeInsets.all(16),
+//       child: LineChart(
+//         LineChartData(
+//           gridData: FlGridData(show: true),
+//           titlesData: FlTitlesData(
+//             leftTitles: AxisTitles(
+//               sideTitles: SideTitles(
+//                 showTitles: true,
+//                 reservedSize: 40,
+//                 getTitlesWidget: (value, _) => Text('₹${value.toInt()}'),
+//               ),
+//             ),
+//             bottomTitles: AxisTitles(
+//               sideTitles: SideTitles(
+//                 showTitles: true,
+//                 reservedSize: 30,
+//                 getTitlesWidget: (value, _) {
+//                   final months = monthlyData.keys.toList();
+//                   if (value.toInt() >= 0 && value.toInt() < months.length) {
+//                     return Text(
+//                       months[value.toInt()],
+//                       style: TextStyle(fontSize: 12),
+//                     );
+//                   }
+//                   return const Text('');
+//                 },
+//               ),
+//             ),
+//             topTitles: AxisTitles(
+//               sideTitles: SideTitles(showTitles: false),
+//             ),
+//             rightTitles: AxisTitles(
+//               sideTitles: SideTitles(showTitles: false),
+//             ),
+//           ),
+//           lineBarsData: [
+//             LineChartBarData(
+//               spots: monthlyData.entries
+//                   .map((e) => FlSpot(
+//                       monthlyData.keys.toList().indexOf(e.key).toDouble(),
+//                       e.value))
+//                   .toList(),
+//               isCurved: true,
+//               color: Colors.blue,
+//               dotData: FlDotData(show: true),
+//               belowBarData: BarAreaData(show: false),
+//             ),
+//           ],
+//           borderData: FlBorderData(
+//             show: true,
+//             border: Border.all(color: Colors.grey.shade300),
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+
+//   Widget _buildTransactionsList() {
+//     return ListView.builder(
+//       shrinkWrap: true,
+//       physics: NeverScrollableScrollPhysics(),
+//       itemCount: _transactions.length,
+//       itemBuilder: (context, index) {
+//         final transaction = _transactions[index];
+//         return ListTile(
+//           title: Text('Booking ID: ${transaction['bookingId']}'),
+//           subtitle: Text(DateFormat('MMM d, yyyy').format(
+//               transaction['date'].toDate())),
+//           trailing: Text(
+//             '₹${transaction['amount']}',
+//             style: TextStyle(
+//               color: Colors.green,
+//               fontWeight: FontWeight.bold,
+//             ),
+//           ),
+//           onTap: () => _showTransactionDetails(transaction),
+//         );
+//       },
+//     );
+//   }
+
+//   Widget _buildBlockchainVerification(Map<String, dynamic> transaction) {
+//     return FutureBuilder<String>(
+//       future: _verifyBlockchainTransaction(transaction['transactionHash']),
+//       builder: (context, snapshot) {
+//         return Container(
+//           padding: EdgeInsets.all(8),
+//           decoration: BoxDecoration(
+//             color: Colors.grey[200],
+//             borderRadius: BorderRadius.circular(8),
+//           ),
+//           child: Row(
+//             children: [
+//               Icon(
+//                 snapshot.data == 'verified' 
+//                     ? Icons.verified 
+//                     : Icons.pending,
+//                 color: snapshot.data == 'verified' 
+//                     ? Colors.green 
+//                     : Colors.orange,
+//               ),
+//               SizedBox(width: 8),
+//               Text(
+//                 'Blockchain Status: ${snapshot.data ?? 'Verifying...'}',
+//                 style: TextStyle(fontWeight: FontWeight.bold),
+//               ),
+//             ],
+//           ),
+//         );
+//       },
+//     );
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       appBar: AppBar(
+//         title: Text('Financial Report'),
+//         actions: [
+//           IconButton(
+//             icon: Icon(Icons.refresh),
+//             onPressed: _loadFinancialData,
+//           ),
+//         ],
+//       ),
+//       body: _isLoading
+//           ? Center(child: CircularProgressIndicator())
+//           : SingleChildScrollView(
+//               padding: EdgeInsets.all(16),
+//               child: Column(
+//                 crossAxisAlignment: CrossAxisAlignment.start,
+//                 children: [
+//                   // Summary Cards
+//                   Row(
+//                     children: [
+//                       _buildSummaryCard(
+//                         'Total Revenue',
+//                         '₹${_statistics['totalRevenue']?.toStringAsFixed(2)}',
+//                         Icons.monetization_on,
+//                       ),
+//                       _buildSummaryCard(
+//                         'Total Bookings',
+//                         '${_statistics['totalBookings']}',
+//                         Icons.book_online,
+//                       ),
+//                     ],
+//                   ),
+//                   SizedBox(height: 24),
+                  
+//                   // Revenue Chart
+//                   Text(
+//                     'Revenue Trend',
+//                     style: TextStyle(
+//                       fontSize: 20,
+//                       fontWeight: FontWeight.bold,
+//                     ),
+//                   ),
+//                   _buildRevenueChart(),
+//                   SizedBox(height: 24),
+
+//                   // Transactions List
+//                   Text(
+//                     'Recent Transactions',
+//                     style: TextStyle(
+//                       fontSize: 20,
+//                       fontWeight: FontWeight.bold,
+//                     ),
+//                   ),
+//                   _buildTransactionsList(),
+//                 ],
+//               ),
+//             ),
+//     );
+//   }
+
+  Widget _buildSummaryCard(String title, String value, IconData icon) {
+    return Expanded(
+      child: Card(
+        elevation: 4,
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Icon(icon, size: 32, color: Colors.blue),
+              SizedBox(height: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 20,
+                  color: Colors.green,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
