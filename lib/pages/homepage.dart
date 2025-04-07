@@ -18,6 +18,9 @@ import 'package:url_launcher/url_launcher_string.dart';
 import 'package:lineup/pages/notification_page.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:lineup/models/news_model.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:async'; // Add this import for TimeoutException
 
 class Homepage extends StatefulWidget {
   const Homepage({super.key});
@@ -55,11 +58,16 @@ class _HomepageState extends State<Homepage> {
   bool _isProcessingMessage = false;
 
   // Update the API variables
-  final String _apiKey = "g4a-THXUe7zcObEXf99p5OtsfLTHSTpFaonnad7"; // Your actual API key
+  final String _apiKey =
+      "g4a-THXUe7zcObEXf99p5OtsfLTHSTpFaonnad7"; // Your actual API key
   final String _baseUrl = "https://api.gpt4-all.xyz/v1";
 
   // Add these variables at the class level
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  // Add these variables in the _HomepageState class
+  List<NewsArticle> newsArticles = [];
+  bool isLoadingNews = true;
 
   @override
   void initState() {
@@ -68,6 +76,7 @@ class _HomepageState extends State<Homepage> {
     _initializeTurfStream();
     _getCurrentLocation();
     _initializeBookingsStream();
+    fetchNews();
     print('API Key: $_apiKey');
     print('Base URL: $_baseUrl');
   }
@@ -85,12 +94,11 @@ class _HomepageState extends State<Homepage> {
       _showErrorDialog("Failed to load user data: $e");
     }
   }
-   Future<String> _getPlaceNameFromCoordinates(GeoPoint location) async {
+
+  Future<String> _getPlaceNameFromCoordinates(GeoPoint location) async {
     try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(
-        location.latitude,
-        location.longitude
-      );
+      List<Placemark> placemarks =
+          await placemarkFromCoordinates(location.latitude, location.longitude);
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks[0];
         return '${place.locality}, ${place.administrativeArea}';
@@ -105,13 +113,11 @@ class _HomepageState extends State<Homepage> {
     turfStream = FirebaseFirestore.instance
         .collection('turfs')
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) {
+        .map((snapshot) => snapshot.docs.map((doc) {
               Map<String, dynamic> data = doc.data();
               data['id'] = doc.id;
               return data;
-            })
-            .toList());
+            }).toList());
   }
 
   Future<void> signUserOut() async {
@@ -154,7 +160,8 @@ class _HomepageState extends State<Homepage> {
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
-      if (index == 2) { // Notifications tab
+      if (index == 2) {
+        // Notifications tab
         isNotificationVisible = true;
       }
     });
@@ -165,8 +172,9 @@ class _HomepageState extends State<Homepage> {
       index: _selectedIndex,
       children: [
         _buildHomeContent(),
-        Center(child: Text('Search Content', style: TextStyle(fontSize: 24))),
-        NotificationPage(key: PageStorageKey('notifications'), userId: user.uid),
+        _buildNewsContent(),
+        NotificationPage(
+            key: PageStorageKey('notifications'), userId: user.uid),
         _buildProfileContent(),
       ],
     );
@@ -212,7 +220,6 @@ class _HomepageState extends State<Homepage> {
       }).toList(),
     );
   }
-  
 
   Widget _buildProfileContent() {
     return userData.isEmpty
@@ -230,11 +237,13 @@ class _HomepageState extends State<Homepage> {
                           CircleAvatar(
                             radius: 60,
                             backgroundColor: Colors.white,
-                            backgroundImage: userData['profile_image_url'] != null
+                            backgroundImage: userData['profile_image_url'] !=
+                                    null
                                 ? NetworkImage(userData['profile_image_url'])
                                 : null,
                             child: userData['profile_image_url'] == null
-                                ? Icon(Icons.person, size: 60, color: Colors.green)
+                                ? Icon(Icons.person,
+                                    size: 60, color: Colors.green)
                                 : null,
                           ),
                           SizedBox(height: 10),
@@ -243,7 +252,6 @@ class _HomepageState extends State<Homepage> {
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
-                             
                             ),
                           ),
                         ],
@@ -263,10 +271,14 @@ class _HomepageState extends State<Homepage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildInfoRow(Icons.email, 'Email', userData['email'] ?? 'N/A'),
-                          _buildInfoRow(Icons.phone, 'Phone', userData['phone_number'] ?? 'N/A'),
-                          _buildInfoRow(Icons.person, 'Role', userData['role'] ?? 'N/A'),
-                          _buildInfoRow(Icons.location_on, 'Location', _currentLocationName),
+                          _buildInfoRow(
+                              Icons.email, 'Email', userData['email'] ?? 'N/A'),
+                          _buildInfoRow(Icons.phone, 'Phone',
+                              userData['phone_number'] ?? 'N/A'),
+                          _buildInfoRow(
+                              Icons.person, 'Role', userData['role'] ?? 'N/A'),
+                          _buildInfoRow(Icons.location_on, 'Location',
+                              _currentLocationName),
                         ],
                       ),
                     ),
@@ -357,7 +369,6 @@ class _HomepageState extends State<Homepage> {
         ),
       ),
     );
-    
   }
 
   Widget _buildTurfListItem(Map<String, dynamic> turf, String locationName) {
@@ -417,7 +428,8 @@ class _HomepageState extends State<Homepage> {
           itemBuilder: (context, index) {
             final turf = allTurfs[index];
             return FutureBuilder<String>(
-              future: _getPlaceNameFromCoordinates(turf['location'] as GeoPoint),
+              future:
+                  _getPlaceNameFromCoordinates(turf['location'] as GeoPoint),
               builder: (context, snapshot) {
                 final locationName = snapshot.data ?? 'Loading...';
                 return _buildTurfListItem(turf, locationName);
@@ -433,8 +445,8 @@ class _HomepageState extends State<Homepage> {
     try {
       Position position = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high);
-      List<Placemark> placemarks = await placemarkFromCoordinates(
-          position.latitude, position.longitude);
+      List<Placemark> placemarks =
+          await placemarkFromCoordinates(position.latitude, position.longitude);
 
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks[0];
@@ -468,10 +480,12 @@ class _HomepageState extends State<Homepage> {
         return ListView.builder(
           itemCount: snapshot.data!.docs.length,
           itemBuilder: (context, index) {
-            var booking = snapshot.data!.docs[index].data() as Map<String, dynamic>;
+            var booking =
+                snapshot.data!.docs[index].data() as Map<String, dynamic>;
             return ListTile(
               title: Text('Booking for ${booking['turfId']}'),
-              subtitle: Text('Date: ${booking['date'].toDate().toString().split(' ')[0]}'),
+              subtitle: Text(
+                  'Date: ${booking['date'].toDate().toString().split(' ')[0]}'),
               trailing: Text('Status: ${booking['status']}'),
             );
           },
@@ -497,11 +511,13 @@ class _HomepageState extends State<Homepage> {
             label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.search, color: Color.fromARGB(255, 70, 176, 75)),
-            label: 'Search',
+            icon:
+                Icon(Icons.newspaper, color: Color.fromARGB(255, 70, 176, 75)),
+            label: 'News',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.notifications, color: Color.fromARGB(255, 70, 176, 75)),
+            icon: Icon(Icons.notifications,
+                color: Color.fromARGB(255, 70, 176, 75)),
             label: 'Notifications',
           ),
           BottomNavigationBarItem(
@@ -539,7 +555,7 @@ class _HomepageState extends State<Homepage> {
       final userProfile = await _getUserProfile();
       final bookings = await _getUserBookings();
       final reviews = await _getUserReviews();
-      
+
       // Create comprehensive context
       String contextPrompt = """
 You are an AI assistant for the LineUp turf booking app. Here's the current user's complete profile:
@@ -595,10 +611,8 @@ Please provide personalized responses based on this user's data and history.
 
   Future<Map<String, dynamic>> _getUserProfile() async {
     try {
-      DocumentSnapshot doc = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      DocumentSnapshot doc =
+          await _firestore.collection('users').doc(user.uid).get();
       return doc.data() as Map<String, dynamic>;
     } catch (e) {
       print('Error fetching user profile: $e');
@@ -614,8 +628,10 @@ Please provide personalized responses based on this user's data and history.
           .orderBy('createdAt', descending: true)
           .limit(5)
           .get();
-      
-      return bookings.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+
+      return bookings.docs
+          .map((doc) => doc.data() as Map<String, dynamic>)
+          .toList();
     } catch (e) {
       print('Error fetching bookings: $e');
       return [];
@@ -629,8 +645,10 @@ Please provide personalized responses based on this user's data and history.
           .where('userId', isEqualTo: user.uid)
           .orderBy('createdAt', descending: true)
           .get();
-      
-      return reviews.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+
+      return reviews.docs
+          .map((doc) => doc.data() as Map<String, dynamic>)
+          .toList();
     } catch (e) {
       print('Error fetching reviews: $e');
       return [];
@@ -639,7 +657,7 @@ Please provide personalized responses based on this user's data and history.
 
   String _formatBookings(List<Map<String, dynamic>> bookings) {
     if (bookings.isEmpty) return "No recent bookings";
-    
+
     return bookings.map((booking) => """
 • Turf: ${booking['turfName']}
   Date: ${DateFormat('MMM d, yyyy').format(booking['date'].toDate())}
@@ -649,7 +667,7 @@ Please provide personalized responses based on this user's data and history.
 
   String _formatReviews(List<Map<String, dynamic>> reviews) {
     if (reviews.isEmpty) return "No reviews given";
-    
+
     return reviews.map((review) => """
 • Turf: ${review['turfName']}
   Rating: ${review['rating']} stars
@@ -660,7 +678,7 @@ Please provide personalized responses based on this user's data and history.
     try {
       // Get current date
       DateTime now = DateTime.now();
-      
+
       // Get all bookings for the selected turf
       QuerySnapshot bookingsSnapshot = await _firestore
           .collection('bookings')
@@ -677,15 +695,23 @@ Please provide personalized responses based on this user's data and history.
 
       // Get all available time slots (assuming you have predefined time slots)
       List<String> allTimeSlots = [
-        '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
-        '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM',
-        '5:00 PM', '6:00 PM', '7:00 PM', '8:00 PM'
+        '9:00 AM',
+        '10:00 AM',
+        '11:00 AM',
+        '12:00 PM',
+        '1:00 PM',
+        '2:00 PM',
+        '3:00 PM',
+        '4:00 PM',
+        '5:00 PM',
+        '6:00 PM',
+        '7:00 PM',
+        '8:00 PM'
       ];
 
       // Filter out booked slots
-      List<String> availableSlots = allTimeSlots
-          .where((slot) => !bookedSlots.contains(slot))
-          .toList();
+      List<String> availableSlots =
+          allTimeSlots.where((slot) => !bookedSlots.contains(slot)).toList();
 
       if (availableSlots.isEmpty) {
         return "No slots available for today.";
@@ -741,7 +767,7 @@ Role: ${profile['role']}""";
 
     try {
       final response = await _processMessage(message);
-      
+
       setState(() {
         chatMessages.add({
           'role': 'assistant',
@@ -753,7 +779,8 @@ Role: ${profile['role']}""";
       setState(() {
         chatMessages.add({
           'role': 'assistant',
-          'content': 'I apologize, but I encountered an error. Please try again.',
+          'content':
+              'I apologize, but I encountered an error. Please try again.',
         });
       });
     } finally {
@@ -772,13 +799,14 @@ Role: ${profile['role']}""";
             itemBuilder: (context, index) {
               final message = chatMessages[index];
               final isUser = message['role'] == 'user';
-              
+
               return Container(
                 margin: EdgeInsets.symmetric(
                   vertical: 8,
                   horizontal: 16,
                 ),
-                alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                alignment:
+                    isUser ? Alignment.centerRight : Alignment.centerLeft,
                 child: Container(
                   padding: EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -808,7 +836,7 @@ Role: ${profile['role']}""";
 
   Widget _buildMessageInput() {
     final TextEditingController _controller = TextEditingController();
-    
+
     return Padding(
       padding: EdgeInsets.all(8.0),
       child: Row(
@@ -832,6 +860,201 @@ Role: ${profile['role']}""";
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> fetchNews() async {
+    try {
+      setState(() {
+        isLoadingNews = true;
+      });
+
+      // Using a more general endpoint with multiple parameters
+      final response = await http.get(
+        Uri.parse('https://newsapi.org/v2/everything?'
+            'q=sports&'
+            'language=en&'
+            'sortBy=publishedAt&'
+            'apiKey=2a2d28da636a41dd933e1a118bdb31e0'),
+        headers: {
+          'Authorization': '2a2d28da636a41dd933e1a118bdb31e0',
+          'X-Api-Key': '2a2d28da636a41dd933e1a118bdb31e0',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      ).timeout(Duration(seconds: 15));
+
+      print('News API Response Status: ${response.statusCode}');
+      print('News API Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+
+        if (jsonData['status'] == 'ok' && jsonData['articles'] != null) {
+          List<NewsArticle> articles = (jsonData['articles'] as List)
+              .where((article) =>
+                  article['title'] != null && article['description'] != null)
+              .map((article) => NewsArticle.fromJson(article))
+              .toList();
+
+          setState(() {
+            newsArticles = articles;
+            isLoadingNews = false;
+          });
+        } else {
+          throw Exception(
+              'No articles found: ${jsonData['message'] ?? 'Unknown error'}');
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception(
+            'Invalid API key. Please check your API key and try again.');
+      } else if (response.statusCode == 429) {
+        throw Exception('API rate limit exceeded. Please try again later.');
+      } else {
+        throw Exception('Failed to load news: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching news: $e');
+      setState(() {
+        isLoadingNews = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load news: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: () => fetchNews(),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _launchURL(String url) async {
+    if (await canLaunch(url)) {
+      await launch(url);
+    } else {
+      throw 'Could not launch $url';
+    }
+  }
+
+  Widget _buildNewsContent() {
+    if (isLoadingNews) {
+      return Center(child: CircularProgressIndicator());
+    }
+
+    if (newsArticles.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.newspaper, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text(
+              'No sports news available',
+              style: TextStyle(fontSize: 18, color: Colors.grey),
+            ),
+            SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: fetchNews,
+              child: Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: fetchNews,
+      child: ListView.builder(
+        itemCount: newsArticles.length,
+        itemBuilder: (context, index) {
+          final article = newsArticles[index];
+          return Card(
+            margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: InkWell(
+              onTap: () {
+                if (article.url != null) {
+                  _launchURL(article.url!);
+                }
+              },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (article.urlToImage != null)
+                    ClipRRect(
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(4)),
+                      child: Image.network(
+                        article.urlToImage!,
+                        height: 200,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            height: 200,
+                            color: Colors.grey[300],
+                            child: Icon(Icons.error),
+                          );
+                        },
+                      ),
+                    ),
+                  Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          article.title ?? 'No title',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        if (article.description != null)
+                          Text(
+                            article.description!,
+                            style: TextStyle(fontSize: 14),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              article.source ?? 'Unknown source',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              article.publishedAt?.substring(0, 10) ?? '',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
